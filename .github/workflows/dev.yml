@@ -40,18 +40,18 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.sourceEncoding=UTF-8
 
-      # ✅ Install jq
+      # Install jq
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # ✅ Fetch Quality Gate + Fail Pipeline
+      #Fetch Quality Gate + Fail Pipeline
       - name: Get SonarQube Quality Gate Details
         run: |
           echo "Fetching Quality Gate details..."
 
           # Check report file
           if [ ! -f ".scannerwork/report-task.txt" ]; then
-            echo "❌ report-task.txt not found. Sonar scan failed."
+            echo "report-task.txt not found. Sonar scan failed."
             exit 1
           fi
 
@@ -60,7 +60,7 @@ jobs:
           echo "Task URL: $TASK_URL"
 
           if [[ -z "$TASK_URL" ]]; then
-            echo "❌ Failed to extract TASK_URL"
+            echo "Failed to extract TASK_URL"
             exit 1
           fi
 
@@ -71,7 +71,7 @@ jobs:
 
             # Validate JSON
             if ! echo "$RESPONSE" | jq . >/dev/null 2>&1; then
-              echo "❌ Invalid JSON response:"
+              echo "Invalid JSON response:"
               echo "$RESPONSE"
               exit 1
             fi
@@ -83,7 +83,7 @@ jobs:
           done
 
           if [[ "$STATUS" != "SUCCESS" ]]; then
-            echo "❌ SonarQube analysis failed: $STATUS"
+            echo "SonarQube analysis failed: $STATUS"
             exit 1
           fi
 
@@ -91,7 +91,7 @@ jobs:
           ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.task.analysisId')
 
           if [[ -z "$ANALYSIS_ID" || "$ANALYSIS_ID" == "null" ]]; then
-            echo "❌ analysisId is null"
+            echo "analysisId is null"
             exit 1
           fi
 
@@ -102,7 +102,7 @@ jobs:
 
           # Validate JSON
           if ! echo "$QG_RESPONSE" | jq . >/dev/null 2>&1; then
-            echo "❌ Invalid Quality Gate response:"
+            echo "Invalid Quality Gate response:"
             echo "$QG_RESPONSE"
             exit 1
           fi
@@ -124,10 +124,10 @@ jobs:
 
           # Fail pipeline if not OK
           if [[ "$QG_STATUS" != "OK" ]]; then
-            echo "❌ Quality Gate FAILED"
+            echo "Quality Gate FAILED"
             exit 1
           else
-            echo "✅ Quality Gate PASSED"
+            echo "Quality Gate PASSED"
           fi
 
         env:
