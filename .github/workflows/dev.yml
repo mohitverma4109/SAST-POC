@@ -36,8 +36,8 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >
-            -Dsonar.projectKey=sastPoc
-            -Dsonar.projectName=sastPoc
+            -Dsonar.projectKey=SAST-Project1
+            -Dsonar.projectName=SAST-Project1
             -Dsonar.sources=.
             -Dsonar.language=js
             -Dsonar.sourceEncoding=UTF-8
