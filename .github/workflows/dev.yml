@@ -41,3 +41,83 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.language=js
             -Dsonar.sourceEncoding=UTF-8
+
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      
+      - name: Get SonarQube Quality Gate Details
+        run: |
+          echo "Fetching Quality Gate details..."
+
+          # Validate report file
+          if [ ! -f ".scannerwork/report-task.txt" ]; then
+            echo "report-task.txt not found. Sonar scan failed."
+            exit 1
+          fi
+
+          # Extract full task URL (IMPORTANT FIX)
+          TASK_URL=$(grep ceTaskUrl .scannerwork/report-task.txt | cut -d '=' -f2-)
+          echo "Task URL: $TASK_URL"
+
+          if [[ -z "$TASK_URL" ]]; then
+            echo "Failed to extract TASK_URL"
+            exit 1
+          fi
+
+          # Wait for analysis to complete
+          STATUS="PENDING"
+          while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
+            RESPONSE=$(curl -s -u $SONAR_TOKEN: $TASK_URL)
+            STATUS=$(echo "$RESPONSE" | jq -r '.task.status // "null"')
+            echo "Current Status: $STATUS"
+
+            if [[ "$STATUS" == "null" ]]; then
+              echo "Invalid response from SonarQube:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          if [[ "$STATUS" != "SUCCESS" ]]; then
+            echo "SonarQube analysis failed with status: $STATUS"
+            exit 1
+          fi
+
+          # Extract analysisId
+          ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.task.analysisId')
+
+          if [[ -z "$ANALYSIS_ID" || "$ANALYSIS_ID" == "null" ]]; then
+            echo "analysisId is null"
+            exit 1
+          fi
+
+          echo "Analysis ID: $ANALYSIS_ID"
+
+          # Fetch Quality Gate result
+          QG_RESPONSE=$(curl -s -u $SONAR_TOKEN: "$SONAR_HOST_URL/api/qualitygates/project_status?analysisId=$ANALYSIS_ID")
+
+          echo "Quality Gate Response:"
+          echo "$QG_RESPONSE" | jq
+
+          echo "---- FAILED CONDITIONS ----"
+          echo "$QG_RESPONSE" | jq -r '
+            .projectStatus.conditions[]?
+            | select(.status=="ERROR")
+            | "\(.metricKey): \(.actualValue) (Expected: \(.errorThreshold))"
+          '
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # Enforce Quality Gate (fail pipeline)
+      - name: SonarQube Quality Gate Check
+        uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+        with:
+          scanMetadataReportFile: .scannerwork/report-task.txt
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
