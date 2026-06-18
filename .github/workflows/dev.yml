@@ -67,20 +67,22 @@ jobs:
           fi
 
           # Wait for analysis to complete
-          STATUS="PENDING"
-          while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
-            RESPONSE=$(curl -s -u $SONAR_TOKEN: $TASK_URL)
-            STATUS=$(echo "$RESPONSE" | jq -r '.task.status // "null"')
-            echo "Current Status: $STATUS"
+            STATUS="PENDING"
+            while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
+            RESPONSE=$(curl -s -u $SONAR_TOKEN: "$TASK_URL")
 
-            if [[ "$STATUS" == "null" ]]; then
-              echo "Invalid response from SonarQube:"
-              echo "$RESPONSE"
-              exit 1
-            fi
+          # Validate JSON
+            if ! echo "$RESPONSE" | jq . >/dev/null 2>&1; then
+            echo "Invalid response from SonarQube:"
+            echo "$RESPONSE"
+            exit 1
+           fi
 
-            sleep 5
-          done
+           STATUS=$(echo "$RESPONSE" | jq -r '.task.status')
+           echo "Current Status: $STATUS"
+ 
+          sleep 5
+           done
 
           if [[ "$STATUS" != "SUCCESS" ]]; then
             echo "SonarQube analysis failed with status: $STATUS"
