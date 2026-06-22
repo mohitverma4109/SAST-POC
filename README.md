@@ -95,7 +95,7 @@ This project has the most common vulnerabilities of `OWASP Top 10 <https://www.o
 The exactly code location of each vulnerability is pending to write
 
 # References
-
+This is ref for the following updates.
 I took ideas and how to explode it in NodeJS using these references:
 
 - https://blog.risingstack.com/node-js-security-checklist/
