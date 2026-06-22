@@ -37,7 +37,7 @@ The purpose of project is to provide a real app to test the quality of security 
 
 This project simulates a real (and very little) shop site that has identifiable sources points of common vulnerabilities.
 
-## Installation
+## Installation Guide
 
 The most simple way to run the project is using docker-compose, doing this:
 
