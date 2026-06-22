@@ -44,7 +44,7 @@ The most simple way to run the project is using docker-compose, doing this:
 ```bash
 
 # git clone https://github.com/cr0hn/vulnerable-node.git vulnerable-node
-# cd vulnerable-node/
+# cd vulnerable-nodes/
 # docker-compose build && docker-compose up
 Building postgres_db
 Step 1 : FROM library/postgres
