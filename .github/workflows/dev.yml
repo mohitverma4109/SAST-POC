@@ -13,21 +13,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ✅ Checkout code
+      # Checkout code
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      # ✅ Setup Node.js
+      #  Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # ✅ Install dependencies
+      # Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # ✅ SonarQube Scan
+      # SonarQube Scan
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@v2
         env:
