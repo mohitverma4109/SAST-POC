@@ -41,7 +41,7 @@ switch (process.env.STAGE){
     default:
         config = config_devel;
 }
-
+// Hello World
 // Build connection string
 config.db.connectionString = config.db.server + "/" + config.db.database
 
