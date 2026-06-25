@@ -17,6 +17,7 @@ Author | Daniel Garcia (cr0hn) - @ggdaniel
 Support this project (to solve issues, new features...) by applying the Github "Sponsor" button.
 
 # What's this project?
+# Updating this file 
 
 The main goal of this project is to be a project with really vulnerable code in NodeJS, not simulated.
 
