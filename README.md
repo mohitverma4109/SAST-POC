@@ -1,5 +1,4 @@
-
-Vulnerable Node Packages
+Vulnerable Node Package
 =======================
 
 ![Logo](https://raw.githubusercontent.com/cr0hn/vulnerable-node/master/images/logo-small.png)
@@ -19,7 +18,7 @@ Support this project (to solve issues, new features...) by applying the Github "
 
 # What's this project?
 
-The main goal of this project is to be a project with really vulnerable code in NodeJS, not simulated.
+The main purpose of this project is to be a project with really vulnerable code in NodeJS, not simulated.
 
 ## Why?
 
