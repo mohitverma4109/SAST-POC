@@ -19,7 +19,7 @@ Support this project (to solve issues, new features...) by applying the Github "
 # What's this project?
 # Updating this file 
 
-The main goal of this project is to be a project with really vulnerable code in NodeJS, not simulated.
+The main purpose of this project is to be a project with really vulnerable code in NodeJS, not simulated.
 
 ## Why?
 
@@ -96,7 +96,7 @@ This project has the most common vulnerabilities of `OWASP Top 10 <https://www.o
 The exactly code location of each vulnerability is pending to write
 
 # References
-
+This is reference of readme file
 I took ideas and how to explode it in NodeJS using these references:
 
 - https://blog.risingstack.com/node-js-security-checklist/
