@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      
+
 jobs:
   tmas-scan:
     runs-on: ubuntu-latest
@@ -13,7 +13,7 @@ jobs:
       contents: read
 
     steps:
-      # Checkout Repository
+      # Checkout source code
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: 18
 
       # Install Dependencies
       - name: Install Dependencies
@@ -39,13 +39,12 @@ jobs:
           docker inspect vuln-image:latest
 
       # Download TMAS CLI
-      - name: Download TMAS CLI
+      - name: Install TMAS CLI
         run: |
           curl -L https://ast-cli.xdr.trendmicro.com/tmas-cli/2.263.0/tmas-cli_Linux_x86_64.tar.gz -o tmas.tar.gz
-          mkdir tmas-cli
-          tar -xzf tmas.tar.gz -C tmas-cli
-          chmod +x tmas-cli/tmas
-          sudo mv tmas-cli/tmas /usr/local/bin/tmas
+          tar -xzf tmas.tar.gz
+          chmod +x tmas
+          sudo mv tmas /usr/local/bin/
 
       # Verify TMAS CLI
       - name: Verify TMAS CLI
@@ -54,19 +53,24 @@ jobs:
           tmas version
 
       # Run TMAS Scan
-      # Show TMAS Help
-      - name: Show TMAS Help
+      - name: Run TMAS Scan
+        env:
+          TMAS_API_KEY: ${{ secrets.TMAS_API_KEY }}
         run: |
-         tmas --help
-         echo "--------------------------------"
-         tmas scan --help
+          tmas scan \
+            docker:vuln-image:latest \
+            -V \
+            -M \
+            -S \
+            -r ${{ secrets.TMAS_REGION }} \
+            --redacted
 
-      # Upload report if generated
+      # Upload Report
       - name: Upload TMAS Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tmas-report
           path: |
-            *.md
             *.json
+            *.md
