@@ -50,4 +50,4 @@ jobs:
          secretsScan: true
          tmasApiKey: ${{ secrets.TMAS_API_KEY }}
          githubToken: ${{ github.token }}
-         additionalArgs: "--region ap-south-1 --log-level debug"
+         additionalArgs: "--region=${{ secrets.TMAS_REGION }}"
