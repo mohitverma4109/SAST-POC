@@ -1,0 +1,53 @@
+name: TMAS Scan
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  tmas-scan:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      # Checkout source code
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      # Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Build Docker image
+      - name: Build Docker Image
+        run: |
+          docker build -t vuln-image:latest .
+
+      # Verify image
+      - name: Verify Docker Image
+        run: docker images
+
+      # TMAS Scan
+      - name: Scan Docker Image
+        uses: trendmicro/tmas-scan-action@main
+        with:
+          version: "2"
+          artifact: docker:vuln-image:latest
+          vulnerabilitiesScan: true
+          malwareScan: true
+          secretsScan: true
+          tmasApiKey: ${{ secrets.TMAS_API_KEY }}
+          githubToken: ${{ github.token }}
+          additionalArgs: "--region=${{ secrets.TMAS_REGION }}"
