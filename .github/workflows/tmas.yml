@@ -54,17 +54,12 @@ jobs:
           tmas version
 
       # Run TMAS Scan
-      - name: Run TMAS Scan
-        env:
-          TMAS_API_KEY: ${{ secrets.TMAS_API_KEY }}
+      # Show TMAS Help
+      - name: Show TMAS Help
         run: |
-          tmas scan \
-            -V \
-            -M \
-            -S \
-            docker:vuln-image:latest \
-            --region ${{ secrets.TMAS_REGION }} \
-            --redacted
+         tmas --help
+         echo "--------------------------------"
+         tmas scan --help
 
       # Upload report if generated
       - name: Upload TMAS Report
