@@ -43,11 +43,11 @@ jobs:
       - name: Scan Docker Image
         uses: trendmicro/tmas-scan-action@v3.1.3
         with:
-          version: "2"
-          artifact: docker:vuln-image:latest
-          vulnerabilitiesScan: true
-          malwareScan: true
-          secretsScan: true
-          tmasApiKey: ${{ secrets.TMAS_API_KEY }}
-          githubToken: ${{ github.token }}
-          additionalArgs: "--region=${{ secrets.TMAS_REGION }}"
+         version: "2"
+         artifact: docker:vuln-image:latest
+         vulnerabilitiesScan: true
+         malwareScan: true
+         secretsScan: true
+         tmasApiKey: ${{ secrets.TMAS_API_KEY }}
+         githubToken: ${{ github.token }}
+         additionalArgs: "--region ap-south-1 --log-level debug"
