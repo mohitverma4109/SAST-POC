@@ -74,6 +74,19 @@ jobs:
 
            echo "✅ No High-risk vulnerabilities found."
 
+      - name: Show ZAP Findings
+        run: |
+          echo "========== ZAP Findings =========="
+
+          jq -r '
+          .site[].alerts[] |
+          "-------------------------------------\n" +
+          "Alert      : \(.alert)\n" +
+          "Risk       : \(.riskdesc)\n" +
+          "Confidence : \(.confidence)\n" +
+          "Description: \(.desc)\n"
+          ' reports/zap-report.json
+
       # Verify Reports
       - name: Verify Generated Reports
         if: always()
