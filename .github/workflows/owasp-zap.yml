@@ -106,7 +106,16 @@ jobs:
       - name: Upload ZAP Report to DefectDojo
         if: always()
         run: |
-         curl -X POST \
+         echo "===== Report Files ====="
+         ls -lh reports
+
+         echo "===== XML Header ====="
+         head -20 reports/zap-report.xml
+
+         echo "===== Uploading to DefectDojo ====="
+
+         curl -v \
+         -X POST \
          "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
          -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
          -F "scan_type=ZAP Scan" \
