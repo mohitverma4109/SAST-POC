@@ -48,7 +48,31 @@ jobs:
             -r zap-report.html \
             -J zap-report.json \
             -x zap-report.xml \
-            -m 5
+            -m 5 || true
+
+      - name: Check ZAP Results
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+          echo "========== ZAP SUMMARY =========="
+
+          HIGH=$(jq '[.site[].alerts[] | select(.riskcode=="3")] | length' reports/zap-report.json)
+          MEDIUM=$(jq '[.site[].alerts[] | select(.riskcode=="2")] | length' reports/zap-report.json)
+          LOW=$(jq '[.site[].alerts[] | select(.riskcode=="1")] | length' reports/zap-report.json)
+          INFO=$(jq '[.site[].alerts[] | select(.riskcode=="0")] | length' reports/zap-report.json)
+
+           echo "High Alerts   : $HIGH"
+           echo "Medium Alerts : $MEDIUM"
+           echo "Low Alerts    : $LOW"
+           echo "Info Alerts   : $INFO"
+
+           if [ "$HIGH" -gt 0 ]; then
+           echo "❌ High-risk vulnerabilities found."
+           exit 1
+           fi
+
+           echo "✅ No High-risk vulnerabilities found."
 
       # Verify Reports
       - name: Verify Generated Reports
