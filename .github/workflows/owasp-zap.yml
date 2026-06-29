@@ -87,7 +87,7 @@ jobs:
           "Description: \(.desc)\n"
           ' reports/zap-report.json
 
-      # Verify Reports
+           # Verify Reports
       - name: Verify Generated Reports
         if: always()
         run: |
@@ -102,40 +102,52 @@ jobs:
           name: OWASP-ZAP-Reports
           path: reports/
 
-          # Upload results to DefectDojo
+      # Show XML File Info
+      - name: Show XML File Info
+        run: |
+          echo "===== FILES ====="
+          ls -lh reports
+          file reports/zap-report.xml
+
+      # Show XML Header
+      - name: Show XML Header
+        run: |
+          echo "===== XML HEADER ====="
+          head -20 reports/zap-report.xml
+
+      # Show ZAP Version
+      - name: Show ZAP Version
+        run: |
+          docker run --rm ghcr.io/zaproxy/zaproxy:stable zap.sh -version
+
+      # Upload Report to DefectDojo
       - name: Upload ZAP Report to DefectDojo
         if: always()
         run: |
-         echo "===== Report Files ====="
-         ls -lh reports
+          curl -v \
+            -X POST \
+            "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
+            -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
+            -F "scan_type=ZAP Scan" \
+            -F "file=@reports/zap-report.xml" \
+            -F "product_name=SAST-POC" \
+            -F "engagement_name=GitHub Actions" \
+            -F "product_type_name=Web Application" \
+            -F "active=true" \
+            -F "verified=true" \
+            -F "minimum_severity=Info" \
+            -F "scan_date=$(date +%F)" \
+            -F "auto_create_context=true"
 
-         echo "===== XML Header ====="
-         head -20 reports/zap-report.xml
-
-         echo "===== Uploading to DefectDojo ====="
-
-         curl -v \
-         -X POST \
-         "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
-         -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
-         -F "scan_type=ZAP Scan" \
-         -F "file=@reports/zap-report.xml" \
-         -F "product_name=SAST-POC" \
-         -F "engagement_name=GitHub Actions" \
-         -F "product_type_name=Web Application" \
-         -F "active=true" \
-         -F "verified=true" \
-         -F "minimum_severity=Info" \
-         -F "scan_date=$(date +%F)" \
-         -F "auto_create_context=true"
-
-      # Show Workflow Summary
+      # Workflow Summary
       - name: Scan Summary
         if: always()
         run: |
           echo "======================================"
-          echo " OWASP ZAP Scan Completed"
+          echo "OWASP ZAP Scan Completed"
           echo "======================================"
           echo "Target: ${{ secrets.TARGET_URL }}"
           echo "Reports Generated:"
-          ls reports
+          ls -lah reports
+
+      
