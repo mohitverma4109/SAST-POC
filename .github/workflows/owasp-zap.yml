@@ -3,7 +3,7 @@ name: OWASP ZAP DAST Scan
 on:
   push:
     branches:
-      - main
+      - ".github/workflows/owasp-zap.yml"
 
 jobs:
   zap-dast:
