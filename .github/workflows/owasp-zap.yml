@@ -110,7 +110,7 @@ jobs:
          "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
          -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
          -F "scan_type=ZAP Scan" \
-         -F "file=@reports/zap-report.json" \
+         -F "file=@reports/zap-report.xml"
          -F "product_name=SAST-POC" \
          -F "engagement_name=GitHub Actions" \
          -F "product_type_name=Web Application" \
