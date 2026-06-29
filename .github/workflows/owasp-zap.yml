@@ -124,6 +124,18 @@ jobs:
         run: |
           docker run --rm ghcr.io/zaproxy/zaproxy:stable zap.sh -version
 
+
+      - name: Show XML File
+        run: |
+         echo "===== XML FILE INFO ====="
+         ls -lh reports
+         file reports/zap-report.xml
+
+         - name: Show XML Header
+           run: |
+            echo "===== FIRST 30 LINES ====="
+            sed -n '1,30p' reports/zap-report.xml
+
       # Upload Report to DefectDojo
       - name: Upload ZAP Report to DefectDojo
         if: always()
