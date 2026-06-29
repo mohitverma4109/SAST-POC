@@ -3,7 +3,9 @@ name: TMAS Scan
 on:
   push:
     branches:
-      - main
+      - ".github/workflows/tmas.yml"
+      - "**/*.java"
+      - "**/*.js"
 
 jobs:
   tmas-scan:
