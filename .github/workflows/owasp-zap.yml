@@ -6,42 +6,72 @@ on:
       - main
 
 jobs:
-  zap-scan:
+  zap-dast:
+
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
 
     steps:
+
+      # Checkout Repository
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      # Verify Target URL
       - name: Verify Target URL
         run: |
-          echo "Scanning: ${{ secrets.TARGET_URL }}"
+          echo "Scanning Target: ${{ secrets.TARGET_URL }}"
+          curl -I "${{ secrets.TARGET_URL }}"
 
+      # Create Report Directory
+      - name: Create Report Directory
+        run: |
+          mkdir -p reports
+          chmod -R 777 reports
+          ls -ld reports
+
+      # Pull Latest ZAP Docker Image
       - name: Pull OWASP ZAP Docker Image
         run: |
           docker pull ghcr.io/zaproxy/zaproxy:stable
 
+      # Run OWASP ZAP Baseline Scan
       - name: Run OWASP ZAP Baseline Scan
         run: |
           docker run --rm \
-            -v ${{ github.workspace }}:/zap/wrk/:rw \
+            -v "${{ github.workspace }}/reports:/zap/wrk/:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-            -t ${{ secrets.TARGET_URL }} \
+            -t "${{ secrets.TARGET_URL }}" \
             -r zap-report.html \
             -J zap-report.json \
             -x zap-report.xml \
             -m 5
 
+      # Verify Reports
+      - name: Verify Generated Reports
+        if: always()
+        run: |
+          echo "===== Reports Directory ====="
+          ls -lah reports
+
+      # Upload Reports
       - name: Upload ZAP Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: OWASP-ZAP-Report
-          path: |
-            zap-report.html
-            zap-report.json
-            zap-report.xml
+          name: OWASP-ZAP-Reports
+          path: reports/
+
+      # Show Workflow Summary
+      - name: Scan Summary
+        if: always()
+        run: |
+          echo "======================================"
+          echo " OWASP ZAP Scan Completed"
+          echo "======================================"
+          echo "Target: ${{ secrets.TARGET_URL }}"
+          echo "Reports Generated:"
+          ls reports
