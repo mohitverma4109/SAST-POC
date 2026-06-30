@@ -106,40 +106,14 @@ jobs:
           name: OWASP-ZAP-Reports
           path: reports/
 
-      # Show XML File Info
-      - name: Show XML File Info
+      
+
+      
+
+      - name: Upload ZAP Report to DefectDojo
+        if: always()
         run: |
-          echo "===== FILES ====="
-          ls -lh reports
-          file reports/zap-report.xml
-
-      # Show XML Header
-      - name: Show XML Header
-        run: |
-          echo "===== XML HEADER ====="
-          head -20 reports/zap-report.xml
-
-      # Show ZAP Version
-      - name: Show ZAP Version
-        run: |
-          docker run --rm ghcr.io/zaproxy/zaproxy:stable zap.sh -version
-
-
-      - name: Show XML File
-        run: |
-         echo "===== XML FILE INFO ====="
-         ls -lh reports
-         file reports/zap-report.xml
-
-         - name: Show XML Header
-           run: |
-            echo "===== FIRST 30 LINES ====="
-            sed -n '1,30p' reports/zap-report.xml
-
-         - name: Upload ZAP Report to DefectDojo
-           if: always()
-           run: |
-            curl -v \
+          curl -v \
            -X POST \
            "${{ secrets.DEFECTDOJO_URL }}/api/v2/import-scan/" \
            -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
