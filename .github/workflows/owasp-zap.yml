@@ -33,6 +33,7 @@ jobs:
       - name: Create Report Directory
         run: |
           mkdir -p reports
+          chmod 755 reports
 
       # Pull Latest ZAP Docker Image
       - name: Pull OWASP ZAP Docker Image
