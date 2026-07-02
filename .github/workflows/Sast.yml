@@ -1,0 +1,187 @@
+name: Node.js DevSecOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths: 
+      - .github/workflows/Sast.yml
+    
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout
+    - name: Checkout source code
+      uses: actions/checkout@v4
+
+    # Setup Node
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+
+    # Install dependencies
+    - name: Install dependencies
+      run: npm install
+
+    ###########################################################
+    # SONARQUBE SAST
+    ###########################################################
+
+    - name: SonarQube Scan
+      uses: sonarsource/sonarqube-scan-action@v2
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      with:
+        args: >
+          -Dsonar.projectKey=SAST-Project1
+          -Dsonar.projectName=SAST-Project1
+          -Dsonar.sources=.
+          -Dsonar.sourceEncoding=UTF-8
+
+    - name: Install jq
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq
+
+    ###########################################################
+    # WAIT FOR SONAR ANALYSIS
+    ###########################################################
+
+    - name: Wait for SonarQube Analysis
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: |
+
+        if [ ! -f ".scannerwork/report-task.txt" ]; then
+          echo "report-task.txt not found"
+          exit 1
+        fi
+
+        TASK_URL=$(grep ceTaskUrl .scannerwork/report-task.txt | cut -d '=' -f2-)
+
+        STATUS="PENDING"
+
+        while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
+
+          RESPONSE=$(curl -s -u ${SONAR_TOKEN}: "$TASK_URL")
+
+          STATUS=$(echo "$RESPONSE" | jq -r '.task.status')
+
+          echo "Analysis Status : $STATUS"
+
+          sleep 5
+
+        done
+
+        if [[ "$STATUS" != "SUCCESS" ]]; then
+          echo "Sonar Analysis Failed"
+          exit 1
+        fi
+
+        ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.task.analysisId')
+
+        echo "ANALYSIS_ID=$ANALYSIS_ID" >> $GITHUB_ENV
+
+    ###########################################################
+    # QUALITY GATE
+    ###########################################################
+
+    - name: Check Quality Gate
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: |
+
+        RESPONSE=$(curl -s -u ${SONAR_TOKEN}: \
+        "${SONAR_HOST_URL}/api/qualitygates/project_status?analysisId=${ANALYSIS_ID}")
+
+        echo "$RESPONSE" | jq .
+
+        STATUS=$(echo "$RESPONSE" | jq -r '.projectStatus.status')
+
+        echo "Quality Gate = $STATUS"
+
+        echo "Failed Conditions"
+
+        echo "$RESPONSE" | jq -r '
+          .projectStatus.conditions[]
+          | select(.status=="ERROR")
+          | "\(.metricKey): \(.actualValue) Expected: \(.errorThreshold)"
+        '
+
+        if [[ "$STATUS" != "OK" ]]; then
+          exit 1
+        fi
+
+    ###########################################################
+    # EXPORT SONAR REPORT
+    ###########################################################
+
+    - name: Export SonarQube Issues
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      run: |
+
+        curl -u ${SONAR_TOKEN}: \
+        "${SONAR_HOST_URL}/api/issues/search?componentKeys=SAST-Project1&ps=500" \
+        -o sonar-report.json
+
+        ls -lh sonar-report.json
+
+    ###########################################################
+    # UPLOAD SONAR REPORT TO DEFECTDOJO
+    ###########################################################
+
+    - name: Upload Sonar Report to DefectDojo
+      run: |
+
+        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/reimport-scan/" \
+        -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
+        -F "scan_type=SonarQube Scan" \
+        -F "engagement=${{ secrets.DEFECTDOJO_ENGAGEMENT_ID }}" \
+        -F "file=@sonar-report.json" \
+        -F "active=true" \
+        -F "verified=true" \
+        -F "close_old_findings=false"
+
+    ###########################################################
+    # ZAP DAST
+    ###########################################################
+
+    - name: Run ZAP Baseline Scan
+      run: |
+
+        mkdir reports
+
+        docker run --rm \
+          -v $(pwd)/reports:/zap/wrk \
+          ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+          -t ${{ secrets.TARGET_URL }} \
+          -J zap-report.json \
+          -x zap-report.xml
+
+    ###########################################################
+    # UPLOAD ZAP REPORT TO DEFECTDOJO
+    ###########################################################
+
+    - name: Upload ZAP Report
+      run: |
+
+        curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/reimport-scan/" \
+        -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
+        -F "scan_type=ZAP Scan" \
+        -F "engagement=${{ secrets.DEFECTDOJO_ENGAGEMENT_ID }}" \
+        -F "file=@reports/zap-report.xml" \
+        -F "active=true" \
+        -F "verified=true" \
+        -F "close_old_findings=false"
