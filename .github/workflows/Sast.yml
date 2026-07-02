@@ -170,14 +170,28 @@ jobs:
 
     - name: Run OWASP ZAP Baseline Scan
       run: |
+       mkdir -p reports
+
+       EXIT_CODE=0
+
        docker run --rm \
-         -v "${{ github.workspace }}/reports:/zap/wrk:rw" \
-          ghcr.io/zaproxy/zaproxy:stable \
-          zap-baseline.py \
-         -t "${{ secrets.TARGET_URL }}" \
-         -J zap-report.json \
-         -x zap-report.xml \
-         -r zap-report.html
+        -v "${{ github.workspace }}/reports:/zap/wrk:rw" \
+        ghcr.io/zaproxy/zaproxy:stable \
+        zap-baseline.py \
+        -t "${{ secrets.TARGET_URL }}" \
+        -x zap-report.xml \
+        -J zap-report.json \
+        -r zap-report.html || EXIT_CODE=$?
+
+         echo "ZAP Exit Code: $EXIT_CODE"
+
+        # Ignore warnings only
+          if [ "$EXIT_CODE" -eq 2 ]; then
+          echo "Warnings found. Continuing..."
+          exit 0
+          fi
+
+          exit $EXIT_CODE
 
 ###########################################################
 # VERIFY REPORTS
