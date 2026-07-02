@@ -154,34 +154,63 @@ jobs:
         -F "verified=true" \
         -F "close_old_findings=false"
 
-    ###########################################################
-    # ZAP DAST
-    ###########################################################
+  
+###########################################################
+# CREATE REPORT DIRECTORY
+###########################################################
 
-    - name: Run ZAP Baseline Scan
+    - name: Create Reports Directory
       run: |
+       mkdir -p ${{ github.workspace }}/reports
+       chmod -R 777 ${{ github.workspace }}/reports
 
-        mkdir reports
+###########################################################
+# RUN ZAP BASELINE SCAN
+###########################################################
 
-        docker run --rm \
-          -v $(pwd)/reports:/zap/wrk \
-          ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
-          -t ${{ secrets.TARGET_URL }} \
-          -J zap-report.json \
-          -x zap-report.xml
-
-    ###########################################################
-    # UPLOAD ZAP REPORT TO DEFECTDOJO
-    ###########################################################
-
-    - name: Upload ZAP Report
+    - name: Run OWASP ZAP Baseline Scan
       run: |
+       docker run --rm \
+         -v "${{ github.workspace }}/reports:/zap/wrk:rw" \
+          ghcr.io/zaproxy/zaproxy:stable \
+          zap-baseline.py \
+         -t "${{ secrets.TARGET_URL }}" \
+         -J zap-report.json \
+         -x zap-report.xml \
+         -r zap-report.html
 
+###########################################################
+# VERIFY REPORTS
+###########################################################
+
+    - name: Verify Generated Reports
+      run: |
+        ls -lah ${{ github.workspace }}/reports
+
+###########################################################
+# UPLOAD REPORTS AS ARTIFACT
+###########################################################
+
+    - name: Upload ZAP Reports
+      uses: actions/upload-artifact@v4
+      with:
+       name: zap-reports
+       path: |
+         reports/zap-report.html
+         reports/zap-report.xml
+         reports/zap-report.json
+
+  ###########################################################
+  # IMPORT INTO DEFECTDOJO
+  ###########################################################
+
+    - name: Upload ZAP Report to DefectDojo
+      run: |
         curl -X POST "${{ secrets.DEFECTDOJO_URL }}/api/v2/reimport-scan/" \
         -H "Authorization: Token ${{ secrets.DEFECTDOJO_API_KEY }}" \
         -F "scan_type=ZAP Scan" \
         -F "engagement=${{ secrets.DEFECTDOJO_ENGAGEMENT_ID }}" \
-        -F "file=@reports/zap-report.xml" \
+        -F "file=@${{ github.workspace }}/reports/zap-report.xml" \
         -F "active=true" \
         -F "verified=true" \
         -F "close_old_findings=false"
