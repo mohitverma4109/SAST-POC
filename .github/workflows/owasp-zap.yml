@@ -127,7 +127,7 @@ jobs:
            -F "scan_date=$(date +%F)" \
            -F "auto_create_context=true"
 
-      # Workflow Summary
+      # Workflow Summaries
       - name: Scan Summary
         if: always()
         run: |
