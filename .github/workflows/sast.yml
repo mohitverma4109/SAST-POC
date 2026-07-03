@@ -3,12 +3,10 @@ name: Node.js Build + SonarQube SAST Scan
 on:
   push:
     branches:
-      - main
-    paths: 
-      - ".github/workflows/sast.yml"
+      - dev
   pull_request:
     branches:
-      - main
+      - dev
   workflow_dispatch:
 
 concurrency:
@@ -173,8 +171,13 @@ jobs:
       # ---------------------------------------------------------------------
       # Generate a findings report DefectDojo can import.
       #
-      # Uses the `sonar-report` CLI to pull issues/hotspots from the SonarQube
-      # API into a JSON file matching DefectDojo's "SonarQube Scan" parser.
+      # `sonar-report` (soprasteria/sonar-report) only outputs HTML — it does
+      # not support a JSON output mode. DefectDojo has a dedicated import
+      # scan_type, "SonarQube Scan detailed", specifically for this HTML
+      # format (distinct from the plain "SonarQube Scan" type, which expects
+      # a different, XML-based export). Both must match or the import fails
+      # with "Error while parsing the report, did you specify the correct
+      # scan type?".
       #
       # ALTERNATIVE: if your DefectDojo instance already has a Tool
       # Configuration + Product API Scan Configuration set up for this Sonar
@@ -197,14 +200,14 @@ jobs:
             --project="$SONAR_PROJECT_NAME" \
             --application="$SONAR_PROJECT_NAME" \
             --branch="${{ github.ref_name }}" \
-            --output="$REPORT_DIR/sonar-report.json" \
+            --output="$REPORT_DIR/sonar-report.html" \
             || echo "::warning::sonar-report generation failed — check CLI flags against your sonar-report version."
 
       - name: Verify Report Was Generated
         id: report_check
         if: always()
         run: |
-          if [ -s "$REPORT_DIR/sonar-report.json" ]; then
+          if [ -s "$REPORT_DIR/sonar-report.html" ]; then
             echo "report_exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::No SonarQube findings report found — skipping DefectDojo upload."
@@ -220,8 +223,8 @@ jobs:
             -X POST \
             "${DEFECTDOJO_URL}/api/v2/import-scan/" \
             -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
-            -F "scan_type=SonarQube Scan" \
-            -F "file=@${REPORT_DIR}/sonar-report.json;type=application/json;filename=sonar-report.json" \
+            -F "scan_type=SonarQube Scan detailed" \
+            -F "file=@${REPORT_DIR}/sonar-report.html;type=text/html;filename=sonar-report.html" \
             -F "product_name=${SONAR_PROJECT_NAME}" \
             -F "engagement_name=GitHub Actions" \
             -F "product_type_name=Web Application" \
