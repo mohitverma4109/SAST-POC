@@ -1,0 +1,256 @@
+name: Node.js Build + SonarQube SAST Scan
+
+on:
+  push:
+    branches:
+      - main
+    paths: 
+      - ".github/workflows/owasp-zap.yml"
+    
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: sonar-sast-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SONAR_PROJECT_KEY: SAST-Project1
+  SONAR_PROJECT_NAME: SAST-Project1
+  REPORT_DIR: reports
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+      DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
+
+    steps:
+      - name: Validate Required Secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in SONAR_TOKEN SONAR_HOST_URL DEFECTDOJO_URL DEFECTDOJO_API_KEY; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Required secret '$var' is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # SonarQube needs full history for blame/new-code analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create Report Directory
+        run: mkdir -p "$REPORT_DIR"
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v2
+        with:
+          args: >
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.projectName=${{ env.SONAR_PROJECT_NAME }}
+            -Dsonar.sources=.
+            -Dsonar.sourceEncoding=UTF-8
+
+      - name: Get SonarQube Quality Gate Details
+        id: quality_gate
+        run: |
+          set -euo pipefail
+          echo "Fetching Quality Gate details..."
+
+          if [ ! -f ".scannerwork/report-task.txt" ]; then
+            echo "::error::report-task.txt not found. Sonar scan failed."
+            exit 1
+          fi
+
+          TASK_URL=$(grep ceTaskUrl .scannerwork/report-task.txt | cut -d '=' -f2-)
+          echo "Task URL: $TASK_URL"
+          if [[ -z "$TASK_URL" ]]; then
+            echo "::error::Failed to extract TASK_URL"
+            exit 1
+          fi
+
+          # Poll for completion with a hard timeout (5 minutes) so a stuck
+          # compute-engine task can't hang the job indefinitely.
+          STATUS="PENDING"
+          ELAPSED=0
+          MAX_WAIT=300
+          INTERVAL=5
+
+          while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "::error::Timed out waiting for SonarQube analysis to complete."
+              exit 1
+            fi
+
+            RESPONSE=$(curl -sSf -u "${SONAR_TOKEN}:" "$TASK_URL")
+            if ! echo "$RESPONSE" | jq . >/dev/null 2>&1; then
+              echo "::error::Invalid JSON response from SonarQube task API:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.task.status')
+            echo "Current Status: $STATUS (elapsed: ${ELAPSED}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [[ "$STATUS" != "SUCCESS" ]]; then
+            echo "::error::SonarQube analysis failed: $STATUS"
+            exit 1
+          fi
+
+          ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.task.analysisId')
+          if [[ -z "$ANALYSIS_ID" || "$ANALYSIS_ID" == "null" ]]; then
+            echo "::error::analysisId is null"
+            exit 1
+          fi
+          echo "Analysis ID: $ANALYSIS_ID"
+          echo "analysis_id=$ANALYSIS_ID" >> "$GITHUB_OUTPUT"
+
+          QG_RESPONSE=$(curl -sSf -u "${SONAR_TOKEN}:" "$SONAR_HOST_URL/api/qualitygates/project_status?analysisId=$ANALYSIS_ID")
+          if ! echo "$QG_RESPONSE" | jq . >/dev/null 2>&1; then
+            echo "::error::Invalid Quality Gate response:"
+            echo "$QG_RESPONSE"
+            exit 1
+          fi
+
+          echo "===== QUALITY GATE RESULT ====="
+          echo "$QG_RESPONSE" | jq .
+
+          QG_STATUS=$(echo "$QG_RESPONSE" | jq -r '.projectStatus.status')
+          echo "Quality Gate Status: $QG_STATUS"
+
+          {
+            echo "### SonarQube Quality Gate: $QG_STATUS"
+            echo ""
+            echo "| Metric | Actual | Threshold |"
+            echo "|--------|--------|-----------|"
+            echo "$QG_RESPONSE" | jq -r '
+              .projectStatus.conditions[]?
+              | select(.status=="ERROR")
+              | "| \(.metricKey) | \(.actualValue) | \(.errorThreshold) |"
+            '
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          echo "qg_status=$QG_STATUS" >> "$GITHUB_OUTPUT"
+
+          # NOTE: we don't exit 1 here on failure — the SAST report is uploaded
+          # to DefectDojo regardless of gate result (see steps below), and the
+          # pipeline fails afterward based on qg_status. This ensures findings
+          # are never lost just because the gate failed.
+
+      # ---------------------------------------------------------------------
+      # Generate a findings report DefectDojo can import.
+      #
+      # Uses the `sonar-report` CLI to pull issues/hotspots from the SonarQube
+      # API into a JSON file matching DefectDojo's "SonarQube Scan" parser.
+      #
+      # ALTERNATIVE: if your DefectDojo instance already has a Tool
+      # Configuration + Product API Scan Configuration set up for this Sonar
+      # project, you can skip report generation entirely and instead call
+      # import-scan with:
+      #   -F "scan_type=SonarQube API Import"
+      #   -F "api_scan_configuration=<id from DefectDojo product config>"
+      # DefectDojo will then pull findings directly from the Sonar API itself.
+      # ---------------------------------------------------------------------
+      - name: Generate SonarQube Findings Report
+        if: always() && steps.quality_gate.outputs.analysis_id != ''
+        run: |
+          set -euo pipefail
+          npm install -g sonar-report
+
+          sonar-report \
+            --sonarurl="$SONAR_HOST_URL" \
+            --sonartoken="$SONAR_TOKEN" \
+            --sonarcomponent="$SONAR_PROJECT_KEY" \
+            --project="$SONAR_PROJECT_NAME" \
+            --application="$SONAR_PROJECT_NAME" \
+            --branch="${{ github.ref_name }}" \
+            --output="$REPORT_DIR/sonar-report.json" \
+            || echo "::warning::sonar-report generation failed — check CLI flags against your sonar-report version."
+
+      - name: Verify Report Was Generated
+        id: report_check
+        if: always()
+        run: |
+          if [ -s "$REPORT_DIR/sonar-report.json" ]; then
+            echo "report_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No SonarQube findings report found — skipping DefectDojo upload."
+            echo "report_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload SAST Report to DefectDojo
+        if: always() && steps.report_check.outputs.report_exists == 'true'
+        run: |
+          set -euo pipefail
+
+          http_code=$(curl -s -o /tmp/defectdojo_response.json -w "%{http_code}" \
+            -X POST \
+            "${DEFECTDOJO_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+            -F "scan_type=SonarQube Scan" \
+            -F "file=@${REPORT_DIR}/sonar-report.json;type=application/json;filename=sonar-report.json" \
+            -F "product_name=${SONAR_PROJECT_NAME}" \
+            -F "engagement_name=GitHub Actions" \
+            -F "product_type_name=Web Application" \
+            -F "active=true" \
+            -F "verified=true" \
+            -F "minimum_severity=Info" \
+            -F "scan_date=$(date +%F)" \
+            -F "auto_create_context=true")
+
+          echo "DefectDojo responded with HTTP $http_code"
+          cat /tmp/defectdojo_response.json || true
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::DefectDojo import failed with HTTP $http_code."
+            exit 1
+          fi
+
+      - name: Upload Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonarQube-Report-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Enforce Quality Gate
+        if: always()
+        run: |
+          set -euo pipefail
+          QG_STATUS="${{ steps.quality_gate.outputs.qg_status }}"
+          echo "Final Quality Gate status: $QG_STATUS"
+          if [[ "$QG_STATUS" != "OK" ]]; then
+            echo "::error::Quality Gate FAILED"
+            exit 1
+          fi
+          echo "✅ Quality Gate PASSED"
