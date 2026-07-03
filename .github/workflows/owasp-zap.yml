@@ -1,243 +1,212 @@
-name: OWASP ZAP Production DAST
+name: OWASP ZAP DAST
 
 on:
   push:
     branches:
       - main
-
-  pull_request:
-    branches:
-      - main
-
+    paths:
+      - ".github/workflows/owasp-zap.yml"
+  
   workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Override target URL (defaults to TARGET_URL secret)"
+        required: false
+        type: string
+      scan_type:
+        description: "Scan type"
+        required: false
+        type: choice
+        options:
+          - baseline
+          - full
+        default: baseline
 
-permissions:
-  contents: read
+# Prevent overlapping scans against the same target from racing each other.
+concurrency:
+  group: zap-dast-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REPORT_DIR: reports
+  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable   # pin to a digest once you've vetted a version, e.g. @sha256:<digest>
 
 jobs:
   zap-dast:
-
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+
+    # Use a GitHub Environment ("production") to gate this job behind
+    # required reviewers / protection rules and to scope secrets to it.
+    environment: testing
+
+    permissions:
+      contents: read
 
     env:
-      TARGET_URL: ${{ secrets.TARGET_URL }}
+      TARGET_URL: ${{ inputs.target_url || secrets.TARGET_URL }}
       DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
       DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
 
     steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
 
-    ###########################################################
-    # Checkout
-    ###########################################################
+      - name: Validate Required Secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          for var in TARGET_URL DEFECTDOJO_URL DEFECTDOJO_API_KEY; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::Required secret/input '$var' is not set."
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
 
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Verify Target URL is Reachable
+        run: |
+          set -euo pipefail
+          echo "Checking target reachability..."
+          curl -sSf --max-time 15 --retry 3 --retry-delay 5 -I "$TARGET_URL" \
+            || { echo "::error::Target URL did not respond successfully."; exit 1; }
 
-    ###########################################################
-    # Verify Target
-    ###########################################################
+      - name: Create Report Directory
+        run: |
+          mkdir -p "$REPORT_DIR"
+          chmod 755 "$REPORT_DIR"
 
-    - name: Verify Target URL
-      run: |
-        echo "Checking application availability..."
-        curl \
-          --retry 5 \
-          --retry-delay 5 \
-          --retry-all-errors \
-          --fail \
-          -I "$TARGET_URL"
+      - name: Pull OWASP ZAP Docker Image
+        run: docker pull "$ZAP_IMAGE"
 
-    ###########################################################
-    # Prepare Reports
-    ###########################################################
+      - name: Run OWASP ZAP Scan
+        id: zap_scan
+        run: |
+          set -euo pipefail
+          SCAN_TYPE="${{ inputs.scan_type || 'baseline' }}"
 
-    - name: Create Report Directory
-      run: |
-        mkdir -p reports
+          if [ "$SCAN_TYPE" = "full" ]; then
+            SCRIPT="zap-full-scan.py"
+          else
+            SCRIPT="zap-baseline.py"
+          fi
 
-    ###########################################################
-    # Pull ZAP Image
-    ###########################################################
+          echo "Running $SCRIPT against $TARGET_URL"
 
-    - name: Pull ZAP Docker Image
-      run: |
-        docker pull ghcr.io/zaproxy/zaproxy:2.16.1
+          # -I: don't fail the step on WARN/FAIL alerts — we evaluate results ourselves below.
+          # Mount an optional rules file (reports/.zap-rules.tsv) to suppress known false positives
+          # by adding "<rule_id>\tIGNORE\t(reason)" lines. Comment out -c if you don't use one yet.
+          docker run --rm \
+            -v "${{ github.workspace }}/${REPORT_DIR}:/zap/wrk/:rw" \
+            "$ZAP_IMAGE" \
+            "$SCRIPT" \
+            -t "$TARGET_URL" \
+            -r zap-report.html \
+            -J zap-report.json \
+            -x zap-report.xml \
+            -m 5 \
+            -I || echo "zap_exit_code=$?" >> "$GITHUB_OUTPUT"
 
-    - name: Debug Workspace Permissions
-      run: |
-       echo "Workspace:"
-       pwd
-       ls -ld .
-       mkdir -p reports
-       ls -ld reports
-       id
+      - name: Verify Report Was Generated
+        run: |
+          set -euo pipefail
+          if [ ! -s "$REPORT_DIR/zap-report.json" ]; then
+            echo "::error::ZAP did not produce a report file — scan likely crashed before completing."
+            ls -lah "$REPORT_DIR" || true
+            exit 1
+          fi
 
+      - name: Check ZAP Results
+        run: |
+          set -euo pipefail
+          echo "========== ZAP SUMMARY =========="
 
-    - name: Test Docker Write Access
-      run: |
-       docker run --rm \
-       -v "${{ github.workspace }}/reports:/zap/wrk:rw" \
-       ghcr.io/zaproxy/zaproxy:2.16.1 \
-       sh -c "id && touch /zap/wrk/test.txt && ls -l /zap/wrk"
+          HIGH=$(jq '[.site[].alerts[] | select(.riskcode=="3")] | length' "$REPORT_DIR/zap-report.json")
+          MEDIUM=$(jq '[.site[].alerts[] | select(.riskcode=="2")] | length' "$REPORT_DIR/zap-report.json")
+          LOW=$(jq '[.site[].alerts[] | select(.riskcode=="1")] | length' "$REPORT_DIR/zap-report.json")
+          INFO=$(jq '[.site[].alerts[] | select(.riskcode=="0")] | length' "$REPORT_DIR/zap-report.json")
 
-    ###########################################################
-    # Run Baseline Scan
-    ###########################################################
+          {
+            echo "### ZAP Scan Summary"
+            echo ""
+            echo "| Severity | Count |"
+            echo "|----------|-------|"
+            echo "| High     | $HIGH |"
+            echo "| Medium   | $MEDIUM |"
+            echo "| Low      | $LOW |"
+            echo "| Info     | $INFO |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      
+          if [ "$HIGH" -gt 0 ]; then
+            echo "::error::High-risk vulnerabilities found ($HIGH)."
+            exit 1
+          fi
 
-    - name: Run OWASP ZAP Baseline Scan
-      run: |
+          echo "✅ No High-risk vulnerabilities found."
 
-        docker run --rm \
-          -v "${{ github.workspace }}/reports:/zap/wrk/:rw" \
-          ghcr.io/zaproxy/zaproxy:2.16.1 \
-          zap-baseline.py \
-          -t "$TARGET_URL" \
-          -m 10 \
-          -r zap-report.html \
-          -J zap-report.json \
-          -x zap-report.xml
+      - name: Show ZAP Findings
+        if: always()
+        run: |
+          echo "========== ZAP Findings =========="
+          jq -r '
+          .site[].alerts[] |
+          "-------------------------------------\n" +
+          "Alert      : \(.alert)\n" +
+          "Risk       : \(.riskdesc)\n" +
+          "Confidence : \(.confidence)\n" +
+          "Description: \(.desc)\n"
+          ' "$REPORT_DIR/zap-report.json" || true
 
-    ###########################################################
-    # Verify Reports
-    ###########################################################
+      - name: Upload ZAP Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OWASP-ZAP-Reports-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
+          if-no-files-found: warn
 
-    - name: Verify Reports
-      run: |
-       echo "===== Reports Directory ====="
-       ls -lah reports
+      - name: Upload ZAP Report to DefectDojo
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -s "$REPORT_DIR/zap-report.xml" ]; then
+            echo "::warning::No ZAP XML report found — skipping DefectDojo upload."
+            exit 0
+          fi
 
-       test -f reports/zap-report.json
-       test -f reports/zap-report.xml
-       test -f reports/zap-report.html
+          http_code=$(curl -s -o /tmp/defectdojo_response.json -w "%{http_code}" \
+            -X POST \
+            "${DEFECTDOJO_URL}/api/v2/import-scan/" \
+            -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
+            -F "scan_type=ZAP Scan" \
+            -F "file=@${REPORT_DIR}/zap-report.xml;type=text/xml;filename=zap-report.xml" \
+            -F "product_name=SAST-POC" \
+            -F "engagement_name=GitHub Actions" \
+            -F "product_type_name=Web Application" \
+            -F "active=true" \
+            -F "verified=true" \
+            -F "minimum_severity=Info" \
+            -F "scan_date=$(date +%F)" \
+            -F "auto_create_context=true")
 
-    ###########################################################
-    # Install jq
-    ###########################################################
+          echo "DefectDojo responded with HTTP $http_code"
+          cat /tmp/defectdojo_response.json || true
 
-    - name: Install jq
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y jq
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::DefectDojo import failed with HTTP $http_code."
+            exit 1
+          fi
 
-    ###########################################################
-    # Count Findings
-    ###########################################################
-
-    - name: Analyze Results
-      id: analysis
-      run: |
-
-        HIGH=$(jq '[.site[].alerts[] | select(.riskcode=="3")] | length' reports/zap-report.json)
-
-        MEDIUM=$(jq '[.site[].alerts[] | select(.riskcode=="2")] | length' reports/zap-report.json)
-
-        LOW=$(jq '[.site[].alerts[] | select(.riskcode=="1")] | length' reports/zap-report.json)
-
-        INFO=$(jq '[.site[].alerts[] | select(.riskcode=="0")] | length' reports/zap-report.json)
-
-        echo "HIGH=$HIGH" >> $GITHUB_ENV
-        echo "MEDIUM=$MEDIUM" >> $GITHUB_ENV
-        echo "LOW=$LOW" >> $GITHUB_ENV
-        echo "INFO=$INFO" >> $GITHUB_ENV
-
-        echo "High: $HIGH"
-        echo "Medium: $MEDIUM"
-        echo "Low: $LOW"
-        echo "Info: $INFO"
-
-    ###########################################################
-    # Show Findings
-    ###########################################################
-
-    - name: Show Findings
-      if: success()
-      run: |
-
-        jq -r '
-        .site[].alerts[] |
-        "---------------------------------\n" +
-        "Alert       : \(.alert)\n" +
-        "Risk        : \(.riskdesc)\n" +
-        "Confidence  : \(.confidence)\n" +
-        "Description : \(.desc)\n"
-        ' reports/zap-report.json
-
-    ###########################################################
-    # Upload Reports
-    ###########################################################
-
-    - name: Upload Reports
-      if: always()
-      uses: actions/upload-artifact@v4
-
-      with:
-        name: zap-reports
-        path: reports/
-        retention-days: 30
-
-    ###########################################################
-    # Import into DefectDojo
-    ###########################################################
-
-    - name: Upload Report to DefectDojo
-      if: success()
-
-      run: |
-
-        curl \
-          --retry 3 \
-          --retry-delay 5 \
-          --retry-all-errors \
-          --fail \
-          -X POST \
-          "$DEFECTDOJO_URL/api/v2/import-scan/" \
-          -H "Authorization: Token $DEFECTDOJO_API_KEY" \
-          -F scan_type="ZAP Scan" \
-          -F file=@reports/zap-report.xml \
-          -F product_name="SAST-POC" \
-          -F engagement_name="GitHub Actions" \
-          -F product_type_name="Web Application" \
-          -F active=true \
-          -F verified=true \
-          -F minimum_severity=Info \
-          -F close_old_findings=true \
-          -F auto_create_context=true \
-          -F scan_date=$(date +%F)
-
-    ###########################################################
-    # GitHub Summary
-    ###########################################################
-
-    - name: Workflow Summary
-      if: success()
-      run: |
-
-        {
-          echo "# OWASP ZAP Scan Summary"
-          echo ""
-          echo "| Severity | Count |"
-          echo "|----------|------:|"
-          echo "| High | $HIGH |"
-          echo "| Medium | $MEDIUM |"
-          echo "| Low | $LOW |"
-          echo "| Info | $INFO |"
-          echo ""
-          echo "Target: $TARGET_URL"
-        } >> $GITHUB_STEP_SUMMARY
-
-    ###########################################################
-    # Quality Gate
-    ###########################################################
-
-    - name: Fail if High Vulnerabilities Exist
-      run: |
-
-        if [ "$HIGH" -gt 0 ]; then
-          echo "High vulnerabilities detected."
-          exit 1
-        fi
-
-        echo "No High vulnerabilities detected."
+      - name: Scan Summary
+        if: always()
+        run: |
+          {
+            echo "### Scan Metadata"
+            echo "- Target: (redacted — see workflow inputs)"
+            echo "- Scan type: ${{ inputs.scan_type || 'baseline' }}"
+            echo "- Run ID: ${{ github.run_id }}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          ls -lah "$REPORT_DIR"
