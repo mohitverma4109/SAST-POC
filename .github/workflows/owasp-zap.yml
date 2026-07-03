@@ -1,64 +1,46 @@
-name: OWASP ZAP DAST
+name: Node.js Build + SonarQube SAST Scan
 
 on:
   push:
     branches:
-      - main
-    paths:
-      - ".github/workflows/owasp-zap.yml"
-  
+      - dev
+  pull_request:
+    branches:
+      - dev
   workflow_dispatch:
-    inputs:
-      target_url:
-        description: "Override target URL (defaults to TARGET_URL secret)"
-        required: false
-        type: string
-      scan_type:
-        description: "Scan type"
-        required: false
-        type: choice
-        options:
-          - baseline
-          - full
-        default: baseline
 
-# Prevent overlapping scans against the same target from racing each other.
 concurrency:
-  group: zap-dast-${{ github.ref }}
-  cancel-in-progress: false
+  group: sonar-sast-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
+  SONAR_PROJECT_KEY: SAST-Project1
+  SONAR_PROJECT_NAME: SAST-Project1
   REPORT_DIR: reports
-  ZAP_IMAGE: ghcr.io/zaproxy/zaproxy:stable   # pin to a digest once you've vetted a version, e.g. @sha256:<digest>
 
 jobs:
-  zap-dast:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    # Use a GitHub Environment ("production") to gate this job behind
-    # required reviewers / protection rules and to scope secrets to it.
-    environment: testing
+    timeout-minutes: 30
 
     permissions:
       contents: read
 
     env:
-      TARGET_URL: ${{ inputs.target_url || secrets.TARGET_URL }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_USER_TOKEN: ${{ secrets.SONAR_USER_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
       DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
       DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
 
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
       - name: Validate Required Secrets
         run: |
           set -euo pipefail
           missing=0
-          for var in TARGET_URL DEFECTDOJO_URL DEFECTDOJO_API_KEY; do
+          for var in SONAR_TOKEN SONAR_USER_TOKEN SONAR_HOST_URL DEFECTDOJO_URL DEFECTDOJO_API_KEY; do
             if [ -z "${!var:-}" ]; then
-              echo "::error::Required secret/input '$var' is not set."
+              echo "::error::Required secret '$var' is not set."
               missing=1
             fi
           done
@@ -66,124 +48,193 @@ jobs:
             exit 1
           fi
 
-      - name: Verify Target URL is Reachable
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # SonarQube needs full history for blame/new-code analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
         run: |
           set -euo pipefail
-          echo "Checking target reachability..."
-          curl -sSf --max-time 15 --retry 3 --retry-delay 5 -I "$TARGET_URL" \
-            || { echo "::error::Target URL did not respond successfully."; exit 1; }
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            echo "::warning::No package-lock.json/npm-shrinkwrap.json found — falling back to 'npm install'. Commit a lockfile for reproducible builds and to enable dependency caching."
+            npm install
+          fi
 
       - name: Create Report Directory
-        run: |
-          mkdir -p "$REPORT_DIR"
-          chmod 777 "$REPORT_DIR"
+        run: mkdir -p "$REPORT_DIR"
 
-      - name: Pull OWASP ZAP Docker Image
-        run: docker pull "$ZAP_IMAGE"
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v2
+        with:
+          args: >
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.projectName=${{ env.SONAR_PROJECT_NAME }}
+            -Dsonar.sources=.
+            -Dsonar.sourceEncoding=UTF-8
 
-      - name: Run OWASP ZAP Scan
-        id: zap_scan
-        run: |
-          set -euo pipefail
-          SCAN_TYPE="${{ inputs.scan_type || 'baseline' }}"
-
-          if [ "$SCAN_TYPE" = "full" ]; then
-            SCRIPT="zap-full-scan.py"
-          else
-            SCRIPT="zap-baseline.py"
-          fi
-
-          echo "Running $SCRIPT against $TARGET_URL"
-
-          # -I: don't fail the step on WARN/FAIL alerts — we evaluate results ourselves below.
-          # Mount an optional rules file (reports/.zap-rules.tsv) to suppress known false positives
-          # by adding "<rule_id>\tIGNORE\t(reason)" lines. Comment out -c if you don't use one yet.
-          docker run --rm \
-            -v "${{ github.workspace }}/${REPORT_DIR}:/zap/wrk/:rw" \
-            "$ZAP_IMAGE" \
-            "$SCRIPT" \
-            -t "$TARGET_URL" \
-            -r zap-report.html \
-            -J zap-report.json \
-            -x zap-report.xml \
-            -m 5 \
-            -I || echo "zap_exit_code=$?" >> "$GITHUB_OUTPUT"
-
-      - name: Verify Report Was Generated
+      - name: Get SonarQube Quality Gate Details
+        id: quality_gate
         run: |
           set -euo pipefail
-          if [ ! -s "$REPORT_DIR/zap-report.json" ]; then
-            echo "::error::ZAP did not produce a report file — scan likely crashed before completing."
-            ls -lah "$REPORT_DIR" || true
+          echo "Fetching Quality Gate details..."
+
+          if [ ! -f ".scannerwork/report-task.txt" ]; then
+            echo "::error::report-task.txt not found. Sonar scan failed."
             exit 1
           fi
 
-      - name: Check ZAP Results
-        run: |
-          set -euo pipefail
-          echo "========== ZAP SUMMARY =========="
+          TASK_URL=$(grep ceTaskUrl .scannerwork/report-task.txt | cut -d '=' -f2-)
+          echo "Task URL: $TASK_URL"
+          if [[ -z "$TASK_URL" ]]; then
+            echo "::error::Failed to extract TASK_URL"
+            exit 1
+          fi
 
-          HIGH=$(jq '[.site[].alerts[] | select(.riskcode=="3")] | length' "$REPORT_DIR/zap-report.json")
-          MEDIUM=$(jq '[.site[].alerts[] | select(.riskcode=="2")] | length' "$REPORT_DIR/zap-report.json")
-          LOW=$(jq '[.site[].alerts[] | select(.riskcode=="1")] | length' "$REPORT_DIR/zap-report.json")
-          INFO=$(jq '[.site[].alerts[] | select(.riskcode=="0")] | length' "$REPORT_DIR/zap-report.json")
+          # Poll for completion with a hard timeout (5 minutes) so a stuck
+          # compute-engine task can't hang the job indefinitely.
+          STATUS="PENDING"
+          ELAPSED=0
+          MAX_WAIT=300
+          INTERVAL=5
+
+          while [[ "$STATUS" == "PENDING" || "$STATUS" == "IN_PROGRESS" ]]; do
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "::error::Timed out waiting for SonarQube analysis to complete."
+              exit 1
+            fi
+
+            RESPONSE=$(curl -sSf -u "${SONAR_TOKEN}:" "$TASK_URL")
+            if ! echo "$RESPONSE" | jq . >/dev/null 2>&1; then
+              echo "::error::Invalid JSON response from SonarQube task API:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.task.status')
+            echo "Current Status: $STATUS (elapsed: ${ELAPSED}s)"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          if [[ "$STATUS" != "SUCCESS" ]]; then
+            echo "::error::SonarQube analysis failed: $STATUS"
+            exit 1
+          fi
+
+          ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.task.analysisId')
+          if [[ -z "$ANALYSIS_ID" || "$ANALYSIS_ID" == "null" ]]; then
+            echo "::error::analysisId is null"
+            exit 1
+          fi
+          echo "Analysis ID: $ANALYSIS_ID"
+          echo "analysis_id=$ANALYSIS_ID" >> "$GITHUB_OUTPUT"
+
+          QG_RESPONSE=$(curl -sSf -u "${SONAR_TOKEN}:" "$SONAR_HOST_URL/api/qualitygates/project_status?analysisId=$ANALYSIS_ID")
+          if ! echo "$QG_RESPONSE" | jq . >/dev/null 2>&1; then
+            echo "::error::Invalid Quality Gate response:"
+            echo "$QG_RESPONSE"
+            exit 1
+          fi
+
+          echo "===== QUALITY GATE RESULT ====="
+          echo "$QG_RESPONSE" | jq .
+
+          QG_STATUS=$(echo "$QG_RESPONSE" | jq -r '.projectStatus.status')
+          echo "Quality Gate Status: $QG_STATUS"
 
           {
-            echo "### ZAP Scan Summary"
+            echo "### SonarQube Quality Gate: $QG_STATUS"
             echo ""
-            echo "| Severity | Count |"
-            echo "|----------|-------|"
-            echo "| High     | $HIGH |"
-            echo "| Medium   | $MEDIUM |"
-            echo "| Low      | $LOW |"
-            echo "| Info     | $INFO |"
+            echo "| Metric | Actual | Threshold |"
+            echo "|--------|--------|-----------|"
+            echo "$QG_RESPONSE" | jq -r '
+              .projectStatus.conditions[]?
+              | select(.status=="ERROR")
+              | "| \(.metricKey) | \(.actualValue) | \(.errorThreshold) |"
+            '
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-          if [ "$HIGH" -gt 0 ]; then
-            echo "::error::High-risk vulnerabilities found ($HIGH)."
-            exit 1
-          fi
+          echo "qg_status=$QG_STATUS" >> "$GITHUB_OUTPUT"
 
-          echo "✅ No High-risk vulnerabilities found."
+          # NOTE: we don't exit 1 here on failure — the SAST report is uploaded
+          # to DefectDojo regardless of gate result (see steps below), and the
+          # pipeline fails afterward based on qg_status. This ensures findings
+          # are never lost just because the gate failed.
 
-      - name: Show ZAP Findings
-        if: always()
-        run: |
-          echo "========== ZAP Findings =========="
-          jq -r '
-          .site[].alerts[] |
-          "-------------------------------------\n" +
-          "Alert      : \(.alert)\n" +
-          "Risk       : \(.riskdesc)\n" +
-          "Confidence : \(.confidence)\n" +
-          "Description: \(.desc)\n"
-          ' "$REPORT_DIR/zap-report.json" || true
-
-      - name: Upload ZAP Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: OWASP-ZAP-Reports-${{ github.run_id }}
-          path: reports/
-          retention-days: 30
-          if-no-files-found: warn
-
-      - name: Upload ZAP Report to DefectDojo
-        if: always()
+      # ---------------------------------------------------------------------
+      # Generate a findings report DefectDojo can import.
+      #
+      # `sonar-report` (soprasteria/sonar-report) only outputs HTML — it does
+      # not support a JSON output mode. DefectDojo has a dedicated import
+      # scan_type, "SonarQube Scan detailed", specifically for this HTML
+      # format (distinct from the plain "SonarQube Scan" type, which expects
+      # a different, XML-based export). Both must match or the import fails
+      # with "Error while parsing the report, did you specify the correct
+      # scan type?".
+      #
+      # Uses SONAR_USER_TOKEN, NOT SONAR_TOKEN, deliberately: SonarQube Project
+      # Analysis Tokens (used above for the scan itself) are scoped only to
+      # running analysis and will 403 on query APIs like /api/hotspots/search,
+      # regardless of the underlying user's project permissions. Only a User
+      # Token (My Account > Security > Generate Tokens > User Token) grants
+      # full Web API query rights. Use a dedicated service account for this,
+      # not a personal admin token.
+      #
+      # ALTERNATIVE: if your DefectDojo instance already has a Tool
+      # Configuration + Product API Scan Configuration set up for this Sonar
+      # project, you can skip report generation entirely and instead call
+      # import-scan with:
+      #   -F "scan_type=SonarQube API Import"
+      #   -F "api_scan_configuration=<id from DefectDojo product config>"
+      # DefectDojo will then pull findings directly from the Sonar API itself.
+      # ---------------------------------------------------------------------
+      - name: Generate SonarQube Findings Report
+        if: always() && steps.quality_gate.outputs.analysis_id != ''
         run: |
           set -euo pipefail
-          if [ ! -s "$REPORT_DIR/zap-report.xml" ]; then
-            echo "::warning::No ZAP XML report found — skipping DefectDojo upload."
-            exit 0
+          npm install -g sonar-report
+
+          sonar-report \
+            --sonarurl="$SONAR_HOST_URL" \
+            --sonartoken="$SONAR_USER_TOKEN" \
+            --sonarcomponent="$SONAR_PROJECT_KEY" \
+            --project="$SONAR_PROJECT_NAME" \
+            --application="$SONAR_PROJECT_NAME" \
+            --branch="${{ github.ref_name }}" \
+            --output="$REPORT_DIR/sonar-report.html" \
+            || echo "::warning::sonar-report generation failed — check CLI flags against your sonar-report version."
+
+      - name: Verify Report Was Generated
+        id: report_check
+        if: always()
+        run: |
+          if [ -s "$REPORT_DIR/sonar-report.html" ]; then
+            echo "report_exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No SonarQube findings report found — skipping DefectDojo upload."
+            echo "report_exists=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Upload SAST Report to DefectDojo
+        if: always() && steps.report_check.outputs.report_exists == 'true'
+        run: |
+          set -euo pipefail
 
           http_code=$(curl -s -o /tmp/defectdojo_response.json -w "%{http_code}" \
             -X POST \
             "${DEFECTDOJO_URL}/api/v2/import-scan/" \
             -H "Authorization: Token ${DEFECTDOJO_API_KEY}" \
-            -F "scan_type=ZAP Scan" \
-            -F "file=@${REPORT_DIR}/zap-report.xml;type=text/xml;filename=zap-report.xml" \
-            -F "product_name=SAST-POC" \
+            -F "scan_type=SonarQube Scan detailed" \
+            -F "file=@${REPORT_DIR}/sonar-report.html;type=text/html;filename=sonar-report.html" \
+            -F "product_name=${SONAR_PROJECT_NAME}" \
             -F "engagement_name=GitHub Actions" \
             -F "product_type_name=Web Application" \
             -F "active=true" \
@@ -200,13 +251,29 @@ jobs:
             exit 1
           fi
 
-      - name: Scan Summary
+      - name: Upload Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonarQube-Report-${{ github.run_id }}
+          path: reports/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Enforce Quality Gate
         if: always()
         run: |
-          {
-            echo "### Scan Metadata"
-            echo "- Target: (redacted — see workflow inputs)"
-            echo "- Scan type: ${{ inputs.scan_type || 'baseline' }}"
-            echo "- Run ID: ${{ github.run_id }}"
-          } | tee -a "$GITHUB_STEP_SUMMARY"
-          ls -lah "$REPORT_DIR"
+          set -euo pipefail
+          QG_STATUS="${{ steps.quality_gate.outputs.qg_status }}"
+
+          if [[ -z "$QG_STATUS" ]]; then
+            echo "::error::Quality Gate status was never set — an earlier step (dependency install, Sonar scan, or the Quality Gate fetch itself) failed before reaching this point. Check the job log above for the actual failure; this is not a Quality Gate failure."
+            exit 1
+          fi
+
+          echo "Final Quality Gate status: $QG_STATUS"
+          if [[ "$QG_STATUS" != "OK" ]]; then
+            echo "::error::Quality Gate FAILED"
+            exit 1
+          fi
+          echo "✅ Quality Gate PASSED"
