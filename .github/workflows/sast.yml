@@ -3,13 +3,10 @@ name: Node.js Build + SonarQube SAST Scan
 on:
   push:
     branches:
-      - main
-    paths: 
-      - ".github/workflows/sast.yml"
-    
+      - dev
   pull_request:
     branches:
-      - main
+      - dev
   workflow_dispatch:
 
 concurrency:
@@ -59,10 +56,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          set -euo pipefail
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            echo "::warning::No package-lock.json/npm-shrinkwrap.json found — falling back to 'npm install'. Commit a lockfile for reproducible builds and to enable dependency caching."
+            npm install
+          fi
 
       - name: Create Report Directory
         run: mkdir -p "$REPORT_DIR"
@@ -248,6 +251,12 @@ jobs:
         run: |
           set -euo pipefail
           QG_STATUS="${{ steps.quality_gate.outputs.qg_status }}"
+
+          if [[ -z "$QG_STATUS" ]]; then
+            echo "::error::Quality Gate status was never set — an earlier step (dependency install, Sonar scan, or the Quality Gate fetch itself) failed before reaching this point. Check the job log above for the actual failure; this is not a Quality Gate failure."
+            exit 1
+          fi
+
           echo "Final Quality Gate status: $QG_STATUS"
           if [[ "$QG_STATUS" != "OK" ]]; then
             echo "::error::Quality Gate FAILED"
