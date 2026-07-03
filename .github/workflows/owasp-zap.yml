@@ -76,7 +76,7 @@ jobs:
       - name: Create Report Directory
         run: |
           mkdir -p "$REPORT_DIR"
-          chmod 755 "$REPORT_DIR"
+          chmod 777 "$REPORT_DIR"
 
       - name: Pull OWASP ZAP Docker Image
         run: docker pull "$ZAP_IMAGE"
