@@ -64,9 +64,28 @@ jobs:
       run: |
         docker pull ghcr.io/zaproxy/zaproxy:2.16.1
 
+    - name: Debug Workspace Permissions
+      run: |
+       echo "Workspace:"
+       pwd
+       ls -ld .
+       mkdir -p reports
+       ls -ld reports
+       id
+
+
+    - name: Test Docker Write Access
+      run: |
+       docker run --rm \
+       -v "${{ github.workspace }}/reports:/zap/wrk:rw" \
+       ghcr.io/zaproxy/zaproxy:2.16.1 \
+       sh -c "id && touch /zap/wrk/test.txt && ls -l /zap/wrk"
+
     ###########################################################
     # Run Baseline Scan
     ###########################################################
+
+      
 
     - name: Run OWASP ZAP Baseline Scan
       run: |
@@ -87,12 +106,12 @@ jobs:
 
     - name: Verify Reports
       run: |
+       echo "===== Reports Directory ====="
+       ls -lah reports
 
-        test -f reports/zap-report.json
-        test -f reports/zap-report.xml
-        test -f reports/zap-report.html
-
-        ls -lh reports
+       test -f reports/zap-report.json
+       test -f reports/zap-report.xml
+       test -f reports/zap-report.html
 
     ###########################################################
     # Install jq
@@ -134,7 +153,7 @@ jobs:
     ###########################################################
 
     - name: Show Findings
-      if: always()
+      if: success()
       run: |
 
         jq -r '
@@ -164,7 +183,7 @@ jobs:
     ###########################################################
 
     - name: Upload Report to DefectDojo
-      if: always()
+      if: success()
 
       run: |
 
@@ -193,7 +212,7 @@ jobs:
     ###########################################################
 
     - name: Workflow Summary
-      if: always()
+      if: success()
       run: |
 
         {
