@@ -3,9 +3,7 @@ name: Node.js Build + SonarQube SAST Scan
 on:
   push:
     branches:
-      - main
-    paths: 
-      - ".github/workflows/sast.yml"
+      - dev
   pull_request:
     branches:
       - dev
@@ -30,6 +28,7 @@ jobs:
 
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_USER_TOKEN: ${{ secrets.SONAR_USER_TOKEN }}
       SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
       DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
       DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
@@ -39,7 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for var in SONAR_TOKEN SONAR_HOST_URL DEFECTDOJO_URL DEFECTDOJO_API_KEY; do
+          for var in SONAR_TOKEN SONAR_USER_TOKEN SONAR_HOST_URL DEFECTDOJO_URL DEFECTDOJO_API_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::error::Required secret '$var' is not set."
               missing=1
@@ -181,13 +180,13 @@ jobs:
       # with "Error while parsing the report, did you specify the correct
       # scan type?".
       #
-      # --no-security-hotspot: the SonarQube token used here needs the
-      # "Browse" permission on this specific project to query Security
-      # Hotspots; without it the hotspots API returns 403 and sonar-report
-      # crashes (unhandled promise rejection) rather than degrading
-      # gracefully. Grant Browse permission on the project to the token's
-      # service account in SonarQube (Project Settings > Permissions) if you
-      # want hotspots included, then remove this flag.
+      # Uses SONAR_USER_TOKEN, NOT SONAR_TOKEN, deliberately: SonarQube Project
+      # Analysis Tokens (used above for the scan itself) are scoped only to
+      # running analysis and will 403 on query APIs like /api/hotspots/search,
+      # regardless of the underlying user's project permissions. Only a User
+      # Token (My Account > Security > Generate Tokens > User Token) grants
+      # full Web API query rights. Use a dedicated service account for this,
+      # not a personal admin token.
       #
       # ALTERNATIVE: if your DefectDojo instance already has a Tool
       # Configuration + Product API Scan Configuration set up for this Sonar
@@ -205,13 +204,12 @@ jobs:
 
           sonar-report \
             --sonarurl="$SONAR_HOST_URL" \
-            --sonartoken="$SONAR_TOKEN" \
+            --sonartoken="$SONAR_USER_TOKEN" \
             --sonarcomponent="$SONAR_PROJECT_KEY" \
             --project="$SONAR_PROJECT_NAME" \
             --application="$SONAR_PROJECT_NAME" \
             --branch="${{ github.ref_name }}" \
             --output="$REPORT_DIR/sonar-report.html" \
-            --no-security-hotspot \
             || echo "::warning::sonar-report generation failed — check CLI flags against your sonar-report version."
 
       - name: Verify Report Was Generated
