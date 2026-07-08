@@ -26,11 +26,11 @@ on:
         required: false
         type: choice
         options:
-          - HIGH
-          - MEDIUM
-          - LOW
-          - INFORMATIONAL
-        default: HIGH
+          - High
+          - Medium
+          - Low
+          - Informational
+        default: High
 
 # Prevent overlapping scans against the same target from racing each other.
 concurrency:
@@ -94,7 +94,7 @@ jobs:
           accuknox_token: ${{ env.ACCUKNOX_TOKEN }}
           label: ${{ env.ACCUKNOX_LABEL }}
           scan_type: ${{ inputs.scan_type || 'baseline' }}
-          severity_threshold: ${{ inputs.severity_threshold || 'HIGH' }}
+          severity_threshold: ${{ inputs.severity_threshold || 'High' }}
 
       - name: Scan Summary
         if: always()
@@ -103,7 +103,7 @@ jobs:
             echo "### Scan Metadata"
             echo "- Target: (redacted — see workflow inputs)"
             echo "- Scan type: ${{ inputs.scan_type || 'baseline' }}"
-            echo "- Severity threshold: ${{ inputs.severity_threshold || 'HIGH' }}"
+            echo "- Severity threshold: ${{ inputs.severity_threshold || 'High' }}"
             echo "- Run ID: ${{ github.run_id }}"
             echo ""
             echo "Findings are available in the AccuKnox Console under Issues > Findings > DAST."
