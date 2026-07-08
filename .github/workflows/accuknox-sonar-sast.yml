@@ -38,8 +38,26 @@ jobs:
       - name: Verify app entrypoint
         run: ls -lh app.js package.json
 
+      - name: Validate required secrets
+        run: |
+          missing=""
+          [ -z "${{ secrets.SONAR_TOKEN }}" ] && missing="$missing SONAR_TOKEN"
+          [ -z "${{ secrets.SONAR_HOST_URL }}" ] && missing="$missing SONAR_HOST_URL"
+          [ -z "${{ secrets.SONAR_PROJECT_KEY }}" ] && missing="$missing SONAR_PROJECT_KEY"
+          [ -z "${{ secrets.ACCUKNOX_ENDPOINT }}" ] && missing="$missing ACCUKNOX_ENDPOINT"
+          [ -z "${{ secrets.ACCUKNOX_TOKEN }}" ] && missing="$missing ACCUKNOX_TOKEN"
+          [ -z "${{ secrets.ACCUKNOX_LABEL }}" ] && missing="$missing ACCUKNOX_LABEL"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required repo secrets:$missing"
+            exit 1
+          fi
+
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@v2
+        with:
+          args: >
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=.
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
