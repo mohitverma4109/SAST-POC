@@ -20,7 +20,7 @@ on:
         options:
           - baseline
           - full-scan
-        default: baseline
+        default: full-scan
       severity_threshold:
         description: "Fail the pipeline at or above this severity"
         required: false
@@ -93,7 +93,7 @@ jobs:
           tenant_id: ${{ env.ACCUKNOX_TENANT_ID }}
           accuknox_token: ${{ env.ACCUKNOX_TOKEN }}
           label: ${{ env.ACCUKNOX_LABEL }}
-          scan_type: ${{ inputs.scan_type || 'baseline' }}
+          scan_type: ${{ inputs.scan_type || 'full-scan' }}
           severity_threshold: ${{ inputs.severity_threshold || 'High' }}
 
       - name: Scan Summary
