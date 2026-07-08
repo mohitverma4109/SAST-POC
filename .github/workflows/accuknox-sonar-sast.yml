@@ -19,11 +19,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: '24'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Run lint (if configured)
         run: npm run lint --if-present
@@ -125,7 +129,7 @@ jobs:
           sonar_host_url: ${{ secrets.SONAR_HOST_URL }}
           accuknox_endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
           accuknox_token: ${{ secrets.ACCUKNOX_TOKEN }}
-          accuknox_sast_label: ${{ secrets.ACCUKNOX_SAST_LABEL }}
+          accuknox_label: ${{ secrets.ACCUKNOX_LABEL }}
           soft_fail: false
 
       - name: Check AccuKnox scan outcome
