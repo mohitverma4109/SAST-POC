@@ -1,4 +1,4 @@
-name: Accuknox DAST Scan
+name: Accuknox DAST Scan 
 
 on:
   push:
