@@ -53,7 +53,7 @@ jobs:
           TMAS_API_KEY: ${{ secrets.TMAS_API_KEY }}
         run: |
           echo "Configuring tmas authentication..."
-          tmas configure set apiKey "$TMAS_API_KEY" --region ${{ vars.TM_REGION || 'us-1' }}
+          tmas configure set apiKey "$TMAS_API_KEY"
 
       - name: Scan image (vulnerabilities, malware, secrets, SBOM)
         id: scan
