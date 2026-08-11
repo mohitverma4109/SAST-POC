@@ -59,7 +59,7 @@ jobs:
           tmas scan docker:${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
             -VMS \
             --saveSBOM \
-            --region ${{ vars.TM_REGION || 'us-1' }} \
+            --region ${{ vars.TM_REGION || 'ap-south-1' }} \
             > scan-result.json
 
       - name: Upload scan results as artifact
@@ -74,23 +74,21 @@ jobs:
       # for Kubernetes runtime admission control, not CI-time gating), we
       # evaluate the scan JSON directly: fail the job if any critical
       # vulnerability or malware was found.
-      - name: Evaluate scan results (fail on critical/malware)
+      - name: Evaluate scan results (fail on critical vulnerabilities)
         run: |
-          echo "Inspecting scan-result.json for critical vulnerabilities and malware..."
-          cat scan-result.json | head -c 2000
-          echo ""
-          echo "---"
-          # NOTE: run this once first to confirm the real field names/paths in
-          # your scan-result.json, then we tighten this jq query together.
-          CRITICAL_COUNT=$(jq '[.. | objects | select(.severity? == "critical")] | length' scan-result.json)
-          MALWARE_COUNT=$(jq '[.. | objects | select(.malware? != null)] | length' scan-result.json)
+          echo "Inspecting scan-result.json for critical vulnerabilities..."
+          CRITICAL_COUNT=$(jq '.vulnerabilities.criticalCount' scan-result.json)
+          HIGH_COUNT=$(jq '.vulnerabilities.highCount' scan-result.json)
           echo "Critical vulnerabilities found: $CRITICAL_COUNT"
-          echo "Malware indicators found: $MALWARE_COUNT"
-          if [ "$CRITICAL_COUNT" -gt 0 ] || [ "$MALWARE_COUNT" -gt 0 ]; then
-            echo "::error::Image failed the security gate — critical vulnerabilities or malware detected. Blocking push."
+          echo "High vulnerabilities found: $HIGH_COUNT"
+          if [ "$CRITICAL_COUNT" -gt 0 ]; then
+            echo "::error::Image failed the security gate — $CRITICAL_COUNT critical vulnerabilities detected. Blocking push."
             exit 1
           fi
-          echo "Image passed the security gate."
+          echo "Image passed the critical-vulnerability gate."
+          # NOTE: malware/secrets fields are not yet confirmed against real
+          # output — run 'jq keys scan-result.json' and share the malware/
+          # secrets section so we can add an accurate check for those too.
 
       # ---------- PUSH TO ECR (only reached if the scan + policy gate above passed) ----------
       # Because these steps come after "Enforce Vision One policy gate", a failed
