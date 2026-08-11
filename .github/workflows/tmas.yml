@@ -48,12 +48,8 @@ jobs:
           chmod +x tmas
           sudo mv tmas /usr/local/bin/tmas
 
-      - name: Authenticate tmas with Vision One
-        env:
-          TMAS_API_KEY: ${{ secrets.TMAS_API_KEY }}
-        run: |
-          echo "Configuring tmas authentication..."
-          tmas configure set apiKey "$TMAS_API_KEY"
+      # tmas reads the API key directly from the TMAS_API_KEY environment
+      # variable at scan time — there is no separate "configure"/login step.
 
       - name: Scan image (vulnerabilities, malware, secrets, SBOM)
         id: scan
