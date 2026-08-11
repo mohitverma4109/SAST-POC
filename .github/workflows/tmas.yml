@@ -47,7 +47,6 @@ jobs:
           tar -xzf tmas.tar.gz
           chmod +x tmas
           sudo mv tmas /usr/local/bin/tmas
-
       # tmas reads the API key directly from the TMAS_API_KEY environment
       # variable at scan time — there is no separate "configure"/login step.
 
@@ -61,7 +60,6 @@ jobs:
             --saveSBOM \
             --region ${{ vars.TM_REGION || 'ap-south-1' }} \
             > scan-result.json
-
       - name: Upload scan results as artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -89,7 +87,6 @@ jobs:
           # NOTE: malware/secrets fields are not yet confirmed against real
           # output — run 'jq keys scan-result.json' and share the malware/
           # secrets section so we can add an accurate check for those too.
-
       # ---------- PUSH TO ECR (only reached if the scan + policy gate above passed) ----------
       # Because these steps come after "Enforce Vision One policy gate", a failed
       # scan stops the job right there — GitHub Actions never executes the steps
