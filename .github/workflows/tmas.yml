@@ -60,7 +60,7 @@ jobs:
             -VMS \
             --saveSBOM \
             --region ${{ vars.TM_REGION || 'us-1' }} \
-            --resultFile scan-result.json
+            > scan-result.json
 
       - name: Upload scan results as artifact
         if: always()
