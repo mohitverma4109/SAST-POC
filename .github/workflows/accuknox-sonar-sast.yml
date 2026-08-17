@@ -1,4 +1,4 @@
-name: Build and AccuKnox SAST Scan  
+name: Build and AccuKnox SAST Scan   
 on: 
   push:
     branches:
