@@ -212,139 +212,17 @@ function demoBug10() {
 }
 
 
-// ============================================================
-// SONARQUBE VULNERABILITY DEMO
-// INTENTIONAL VULNERABILITIES - DEMO ENVIRONMENT ONLY
-// DO NOT USE THESE PATTERNS IN PRODUCTION
-// ============================================================
-
-var https = require('https');
-var crypto = require('crypto');
-var childProcess = require('child_process');
-var fsDemo = require('fs');
-
-
-// ============================================================
-// VULNERABILITY #1 - OS COMMAND INJECTION
-// Rule: OS commands should not be vulnerable to
-// command injection attacks
-// ============================================================
-
-app.get('/demo-vuln-command', function(req, res) {
-
-  var userCommand = req.query.command;
-
-  childProcess.exec(
-    userCommand,
-    function(error, stdout) {
-
-      if (error) {
-        return res.status(500).send('Command error');
-      }
-
-      res.send(stdout);
-    }
-  );
-});
-
-
-// ============================================================
-// VULNERABILITY #2 - PATH INJECTION
-// Rule: I/O function calls should not be vulnerable
-// to path injection attacks
-// ============================================================
-
-app.get('/demo-vuln-file', function(req, res) {
-
-  var filename = req.query.file;
-
-  fsDemo.readFile(
-    filename,
-    'utf8',
-    function(error, data) {
-
-      if (error) {
-        return res.status(500).send('File error');
-      }
-
-      res.send(data);
-    }
-  );
-});
-
-
-// ============================================================
-// VULNERABILITY #3 - DYNAMIC CODE INJECTION
-// Rule: Dynamic code execution should not be vulnerable
-// to injection attacks
-// ============================================================
-
-app.get('/demo-vuln-eval', function(req, res) {
-
-  var expression = req.query.expression;
-
-  var result = eval(expression);
-
-  res.send(String(result));
-});
-
-
-// ============================================================
-// VULNERABILITY #4 - OPEN REDIRECT
-// Rule: HTTP request redirections should not be open
-// to forging attacks
-// ============================================================
-
-app.get('/demo-vuln-redirect', function(req, res) {
-
-  var target = req.query.url;
-
-  res.redirect(target);
-});
-
-
-// ============================================================
-// VULNERABILITY #5 - SERVER-SIDE REQUEST FORGERY
-// Rule: Server-side requests should not be vulnerable
-// to forging attacks
-// ============================================================
-
-app.get('/demo-vuln-ssrf', function(req, res) {
-
-  var targetUrl = req.query.url;
-
-  https.get(
-    targetUrl,
-    function(response) {
-
-      var data = '';
-
-      response.on('data', function(chunk) {
-        data += chunk;
-      });
-
-      response.on('end', function() {
-        res.send(data);
-      });
-
-    }
-  ).on('error', function(error) {
-
-    res.status(500).send(
-      'Request error: ' + error.message
-    );
-
-  });
-});
-
-
-// ============================================================
-// VULNERABILITY #6 - WEAK CIPHER
-// Rule: Cipher algorithms should be robust
-// ============================================================
-
+/*
+ * ------------------------------------------------------------
+ * DEMO VULNERABILITY #1
+ * Rule:
+ * Cipher algorithms should be robust
+ *
+ * DES is intentionally used here for SonarQube demonstration.
+ * DO NOT use this algorithm in production.
+ * ------------------------------------------------------------
+ */
 function demoWeakCipher(data) {
-
   var cipher = crypto.createCipher(
     'des',
     'demo-password'
@@ -357,94 +235,130 @@ function demoWeakCipher(data) {
 }
 
 
-// ============================================================
-// VULNERABILITY #7 - INSECURE ENCRYPTION MODE
-// Rule: Encryption algorithms should be used with
-// secure mode and padding scheme
-// ============================================================
-
-function demoInsecureEncryption(data) {
-
-  var key = Buffer.alloc(16);
-  var iv = null;
-
-  var cipher = crypto.createCipheriv(
-    'aes-128-ecb',
-    key,
-    iv
-  );
-
-  return (
-    cipher.update(data, 'utf8', 'hex') +
-    cipher.final('hex')
-  );
-}
-
-
-// ============================================================
-// VULNERABILITY #8 - WEAK CRYPTOGRAPHIC KEY
-// Rule: Cryptographic keys should be robust
-// ============================================================
-
-function demoWeakKey(data) {
-
-  var weakKey = Buffer.from(
-    '1234567890123456'
-  );
-
-  var cipher = crypto.createCipheriv(
-    'aes-128-cbc',
-    weakKey,
-    Buffer.alloc(16)
-  );
-
-  return (
-    cipher.update(data, 'utf8', 'hex') +
-    cipher.final('hex')
-  );
-}
-
-
-// ============================================================
-// VULNERABILITY #9 - INSECURE TLS PROTOCOL
-// Rule: Weak SSL/TLS protocols should not be used
-// ============================================================
-
-function demoWeakTLS() {
-
-  var agent = new https.Agent({
-    minVersion: 'TLSv1'
-  });
-
-  return agent;
-}
-
-
-// ============================================================
-// VULNERABILITY #10 - UNVERIFIED TLS CERTIFICATE
-// Rule: Server certificates should be verified during
-// SSL/TLS connections
-// ============================================================
-
-function demoUnverifiedCertificate() {
-
-  var options = {
+/*
+ * ------------------------------------------------------------
+ * DEMO VULNERABILITY #2
+ * Rule:
+ * Server certificates should be verified during SSL/TLS
+ * connections
+ *
+ * rejectUnauthorized: false intentionally disables TLS
+ * certificate verification.
+ * ------------------------------------------------------------
+ */
+function demoInsecureTLS() {
+  var requestOptions = {
     hostname: 'example.com',
     port: 443,
     path: '/',
     method: 'GET',
 
+    // INTENTIONAL DEMO VULNERABILITY
     rejectUnauthorized: false
   };
 
-  return https.request(options);
+  var request = https.request(
+    requestOptions,
+    function(res) {
+      console.log(
+        'Demo HTTPS response: ' + res.statusCode
+      );
+    }
+  );
+
+  request.on('error', function(error) {
+    console.log(
+      'Demo HTTPS error: ' + error.message
+    );
+  });
+
+  request.end();
 }
 
 
-// ============================================================
-// END SONARQUBE VULNERABILITY DEMO
-// ============================================================
+/*
+ * ------------------------------------------------------------
+ * DEMO VULNERABILITY #3
+ * Weak cryptographic key demonstration
+ *
+ * Intentionally weak key for SonarQube demonstration.
+ * DO NOT use this key in production.
+ * ------------------------------------------------------------
+ */
+function demoWeakKey(data) {
+  var weakKey = '12345678';
+
+  var cipher = crypto.createCipheriv(
+    'aes-128-ecb',
+    Buffer.from(weakKey),
+    null
+  );
+
+  return (
+    cipher.update(data, 'utf8', 'hex') +
+    cipher.final('hex')
+  );
+}
+
+
+/*
+ * ------------------------------------------------------------
+ * DEMO HARD-CODED SECRET
+ *
+ * This is intentionally included for security scanning
+ * demonstration. It may appear as a Security Hotspot
+ * depending on the active SonarQube rules.
+ * ------------------------------------------------------------
+ */
+var demoApiKey = 'DEMO-API-KEY-123456789';
+var demoPassword = 'DemoPassword123!';
+
 
 // ============================================================
-// END OF SONARQUBE DEMO FINDINGS
+// END OF SONARQUBE DEMONSTRATION SECTION
 // ============================================================
+
+
+// catch 404 and forward to error handler
+app.use(function(req, res, next) {
+  var err = new Error('Not Found');
+  err.status = 404;
+  next(err);
+});
+
+
+/*
+ * Debug functions and error handlers
+ */
+if (app.get('env') === 'development') {
+  app.use(function(err, req, res, next) {
+    res.status(err.status || 500);
+
+    res.render('error', {
+      message: err.message,
+      error: err
+    });
+  });
+}
+
+
+// production error handler
+// no stacktraces leaked to user
+app.use(function(err, req, res, next) {
+  res.status(err.status || 500);
+
+  res.render('error', {
+    message: err.message,
+    error: {}
+  });
+});
+
+
+/*
+ * Create database
+ */
+logger4js.info('Building database');
+
+init_db();
+
+module.exports = app;
