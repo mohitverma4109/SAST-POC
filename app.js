@@ -81,19 +81,29 @@ app.use('', login);
 
 
 // ============================================================
-// SONARQUBE DEMONSTRATION SECTION
-// INTENTIONAL SECURITY/BUG FINDINGS - DEMO ENVIRONMENT ONLY
-// These functions are intentionally not called.
+// SONARQUBE CLIENT DEMO - INTENTIONAL FINDINGS
+// ============================================================
+// WARNING:
+// The following code is intentionally insecure/incorrect.
+// DEMO ENVIRONMENT ONLY.
+// DO NOT USE THESE PATTERNS IN PRODUCTION.
+// ============================================================
+
+var crypto = require('crypto');
+var https = require('https');
+var childProcess = require('child_process');
+var fsDemo = require('fs');
+
+
+// ============================================================
+//                    10 INTENTIONAL BUGS
 // ============================================================
 
 /*
- * ------------------------------------------------------------
- * DEMO BUG #1
- * Rule:
+ * BUG #1
  * "NaN" should not be used in comparisons
- * ------------------------------------------------------------
  */
-function demoBugNaN(value) {
+function demoBug01(value) {
   if (value === NaN) {
     console.log('Value is NaN');
   }
@@ -101,13 +111,10 @@ function demoBugNaN(value) {
 
 
 /*
- * ------------------------------------------------------------
- * DEMO BUG #2
- * Rule:
+ * BUG #2
  * "in" should not be used with primitive types
- * ------------------------------------------------------------
  */
-function demoBugPrimitiveIn(value) {
+function demoBug02(value) {
   if ('name' in value) {
     console.log('Name exists');
   }
@@ -115,30 +122,109 @@ function demoBugPrimitiveIn(value) {
 
 
 /*
- * ------------------------------------------------------------
- * DEMO BUG #3
- * Rule:
+ * BUG #3
  * "delete" should be used only with object properties
- * ------------------------------------------------------------
  */
-function demoBugDelete() {
+function demoBug03() {
   var value = 100;
-
   delete value;
 }
 
 
 /*
- * ------------------------------------------------------------
- * DEMO VULNERABILITY #1
- * Rule:
- * Cipher algorithms should be robust
- *
- * DES is intentionally used here for SonarQube demonstration.
- * DO NOT use this algorithm in production.
- * ------------------------------------------------------------
+ * BUG #4
+ * for-loop counter moves in the wrong direction
  */
-function demoWeakCipher(data) {
+function demoBug04() {
+  for (var i = 0; i < 10; i--) {
+    console.log(i);
+  }
+}
+
+
+/*
+ * BUG #5
+ * Invalid typeof comparison
+ */
+function demoBug05(value) {
+  if (typeof value === 'integer') {
+    console.log('Value is integer');
+  }
+}
+
+
+/*
+ * BUG #6
+ * Incorrect NaN comparison
+ */
+function demoBug06(number) {
+  if (number == NaN) {
+    return true;
+  }
+
+  return false;
+}
+
+
+/*
+ * BUG #7
+ * Another invalid typeof value
+ */
+function demoBug07(value) {
+  if (typeof value === 'stringg') {
+    return value.toUpperCase();
+  }
+
+  return value;
+}
+
+
+/*
+ * BUG #8
+ * Array sort without a proper numeric comparison
+ */
+function demoBug08(numbers) {
+  return numbers.sort();
+}
+
+
+/*
+ * BUG #9
+ * Function condition intentionally written incorrectly
+ */
+function demoBug09(value) {
+  if (value = 10) {
+    return true;
+  }
+
+  return false;
+}
+
+
+/*
+ * BUG #10
+ * Unreachable code
+ */
+function demoBug10() {
+  return 'completed';
+
+  console.log('This code can never execute');
+}
+
+
+// ============================================================
+//                10 INTENTIONAL VULNERABILITIES
+// ============================================================
+
+/*
+ * VULNERABILITY #1
+ *
+ * Weak cipher algorithm.
+ *
+ * Demonstrates:
+ * "Cipher algorithms should be robust"
+ */
+function demoVulnerability01(data) {
   var cipher = crypto.createCipher(
     'des',
     'demo-password'
@@ -152,40 +238,38 @@ function demoWeakCipher(data) {
 
 
 /*
- * ------------------------------------------------------------
- * DEMO VULNERABILITY #2
- * Rule:
- * Server certificates should be verified during SSL/TLS
- * connections
+ * VULNERABILITY #2
  *
- * rejectUnauthorized: false intentionally disables TLS
- * certificate verification.
- * ------------------------------------------------------------
+ * TLS certificate validation disabled.
+ *
+ * Demonstrates:
+ * "Server certificates should be verified during SSL/TLS
+ * connections"
  */
-function demoInsecureTLS() {
-  var requestOptions = {
+function demoVulnerability02() {
+
+  var options = {
     hostname: 'example.com',
     port: 443,
     path: '/',
     method: 'GET',
 
-    // INTENTIONAL DEMO VULNERABILITY
+    // INTENTIONAL SECURITY ISSUE
     rejectUnauthorized: false
   };
 
   var request = https.request(
-    requestOptions,
-    function(res) {
+    options,
+    function(response) {
       console.log(
-        'Demo HTTPS response: ' + res.statusCode
+        'Demo HTTPS response: ' +
+        response.statusCode
       );
     }
   );
 
   request.on('error', function(error) {
-    console.log(
-      'Demo HTTPS error: ' + error.message
-    );
+    console.log(error.message);
   });
 
   request.end();
@@ -193,15 +277,15 @@ function demoInsecureTLS() {
 
 
 /*
- * ------------------------------------------------------------
- * DEMO VULNERABILITY #3
- * Weak cryptographic key demonstration
+ * VULNERABILITY #3
  *
- * Intentionally weak key for SonarQube demonstration.
- * DO NOT use this key in production.
- * ------------------------------------------------------------
+ * Weak cryptographic key.
+ *
+ * Demonstrates:
+ * "Cryptographic keys should be robust"
  */
-function demoWeakKey(data) {
+function demoVulnerability03(data) {
+
   var weakKey = '12345678';
 
   var cipher = crypto.createCipheriv(
@@ -218,63 +302,140 @@ function demoWeakKey(data) {
 
 
 /*
- * ------------------------------------------------------------
- * DEMO HARD-CODED SECRET
+ * VULNERABILITY #4
  *
- * This is intentionally included for security scanning
- * demonstration. It may appear as a Security Hotspot
- * depending on the active SonarQube rules.
- * ------------------------------------------------------------
+ * Cross-Site Scripting.
+ *
+ * User-controlled input is directly written into HTML.
  */
-var demoApiKey = 'DEMO-API-KEY-123456789';
-var demoPassword = 'DemoPassword123!';
+app.get('/sonar-demo-xss', function(req, res) {
 
+  var username = req.query.username;
 
-// ============================================================
-// END OF SONARQUBE DEMONSTRATION SECTION
-// ============================================================
-
-
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  var err = new Error('Not Found');
-  err.status = 404;
-  next(err);
+  res.send(
+    '<html><body>' +
+    '<h1>Welcome ' +
+    username +
+    '</h1>' +
+    '</body></html>'
+  );
 });
 
 
 /*
- * Debug functions and error handlers
+ * VULNERABILITY #5
+ *
+ * Command injection demonstration.
+ *
+ * User input is passed into a system command.
+ *
+ * DEMO ONLY.
  */
-if (app.get('env') === 'development') {
-  app.use(function(err, req, res, next) {
-    res.status(err.status || 500);
+app.get('/sonar-demo-command', function(req, res) {
 
-    res.render('error', {
-      message: err.message,
-      error: err
-    });
-  });
+  var command = req.query.command;
+
+  childProcess.exec(
+    'echo ' + command,
+    function(error, stdout) {
+
+      if (error) {
+        return res.status(500).send(
+          'Command error'
+        );
+      }
+
+      res.send(stdout);
+    }
+  );
+});
+
+
+/*
+ * VULNERABILITY #6
+ *
+ * Path traversal demonstration.
+ *
+ * User-controlled path is directly used for file access.
+ *
+ * DEMO ONLY.
+ */
+app.get('/sonar-demo-file', function(req, res) {
+
+  var filename = req.query.file;
+
+  fsDemo.readFile(
+    '/tmp/' + filename,
+    'utf8',
+    function(error, data) {
+
+      if (error) {
+        return res.status(500).send(
+          'File error'
+        );
+      }
+
+      res.send(data);
+    }
+  );
+});
+
+
+/*
+ * VULNERABILITY #7
+ *
+ * Dynamic code execution.
+ *
+ * eval() should not be used with untrusted input.
+ */
+function demoVulnerability07(userInput) {
+
+  return eval(userInput);
 }
 
 
-// production error handler
-// no stacktraces leaked to user
-app.use(function(err, req, res, next) {
-  res.status(err.status || 500);
-
-  res.render('error', {
-    message: err.message,
-    error: {}
-  });
-});
+/*
+ * VULNERABILITY #8
+ *
+ * Hardcoded credential.
+ *
+ * Depending on the SonarQube rule/profile,
+ * this may appear as a Security Hotspot.
+ */
+var demoDatabasePassword =
+  'DemoDatabasePassword123!';
 
 
 /*
- * Create database
+ * VULNERABILITY #9
+ *
+ * Hardcoded API token.
+ *
+ * Depending on the active rule,
+ * this may appear as a Security Hotspot.
  */
-logger4js.info('Building database');
+var demoApiToken =
+  'DEMO-API-TOKEN-123456789';
 
-init_db();
 
-module.exports = app;
+/*
+ * VULNERABILITY #10
+ *
+ * Insecure HTTP URL.
+ *
+ * Demonstrates transmission of data over
+ * an unencrypted HTTP connection.
+ */
+function demoVulnerability10(username) {
+
+  var url =
+    'http://example.com/api/user?name=' +
+    username;
+
+  return url;
+}
+
+
+// ============================================================
+// END OF SONARQUBE DEMO FINDINGS
+// ============================================================
