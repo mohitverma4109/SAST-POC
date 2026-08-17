@@ -81,29 +81,19 @@ app.use('', login);
 
 
 // ============================================================
-// SONARQUBE CLIENT DEMO - INTENTIONAL FINDINGS
-// ============================================================
-// WARNING:
-// The following code is intentionally insecure/incorrect.
-// DEMO ENVIRONMENT ONLY.
-// DO NOT USE THESE PATTERNS IN PRODUCTION.
-// ============================================================
-
-var crypto = require('crypto');
-var https = require('https');
-var childProcess = require('child_process');
-var fsDemo = require('fs');
-
-
-// ============================================================
-//                    10 INTENTIONAL BUGS
+// SONARQUBE DEMONSTRATION SECTION
+// INTENTIONAL SECURITY/BUG FINDINGS - DEMO ENVIRONMENT ONLY
+// These functions are intentionally not called.
 // ============================================================
 
 /*
- * BUG #1
+ * ------------------------------------------------------------
+ * DEMO BUG #1
+ * Rule:
  * "NaN" should not be used in comparisons
+ * ------------------------------------------------------------
  */
-function demoBug01(value) {
+function demoBugNaN(value) {
   if (value === NaN) {
     console.log('Value is NaN');
   }
@@ -111,10 +101,13 @@ function demoBug01(value) {
 
 
 /*
- * BUG #2
+ * ------------------------------------------------------------
+ * DEMO BUG #2
+ * Rule:
  * "in" should not be used with primitive types
+ * ------------------------------------------------------------
  */
-function demoBug02(value) {
+function demoBugPrimitiveIn(value) {
   if ('name' in value) {
     console.log('Name exists');
   }
@@ -122,93 +115,16 @@ function demoBug02(value) {
 
 
 /*
- * BUG #3
+ * ------------------------------------------------------------
+ * DEMO BUG #3
+ * Rule:
  * "delete" should be used only with object properties
+ * ------------------------------------------------------------
  */
-function demoBug03() {
+function demoBugDelete() {
   var value = 100;
+
   delete value;
-}
-
-
-/*
- * BUG #4
- * for-loop counter moves in the wrong direction
- */
-function demoBug04() {
-  for (var i = 0; i < 10; i--) {
-    console.log(i);
-  }
-}
-
-
-/*
- * BUG #5
- * Invalid typeof comparison
- */
-function demoBug05(value) {
-  if (typeof value === 'integer') {
-    console.log('Value is integer');
-  }
-}
-
-
-/*
- * BUG #6
- * Incorrect NaN comparison
- */
-function demoBug06(number) {
-  if (number == NaN) {
-    return true;
-  }
-
-  return false;
-}
-
-
-/*
- * BUG #7
- * Another invalid typeof value
- */
-function demoBug07(value) {
-  if (typeof value === 'stringg') {
-    return value.toUpperCase();
-  }
-
-  return value;
-}
-
-
-/*
- * BUG #8
- * Array sort without a proper numeric comparison
- */
-function demoBug08(numbers) {
-  return numbers.sort();
-}
-
-
-/*
- * BUG #9
- * Function condition intentionally written incorrectly
- */
-function demoBug09(value) {
-  if (value = 10) {
-    return true;
-  }
-
-  return false;
-}
-
-
-/*
- * BUG #10
- * Unreachable code
- */
-function demoBug10() {
-  return 'completed';
-
-  console.log('This code can never execute');
 }
 
 
