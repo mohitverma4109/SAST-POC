@@ -213,18 +213,138 @@ function demoBug10() {
 
 
 // ============================================================
-//                10 INTENTIONAL VULNERABILITIES
+// SONARQUBE VULNERABILITY DEMO
+// INTENTIONAL VULNERABILITIES - DEMO ENVIRONMENT ONLY
+// DO NOT USE THESE PATTERNS IN PRODUCTION
 // ============================================================
 
-/*
- * VULNERABILITY #1
- *
- * Weak cipher algorithm.
- *
- * Demonstrates:
- * "Cipher algorithms should be robust"
- */
-function demoVulnerability01(data) {
+var https = require('https');
+var crypto = require('crypto');
+var childProcess = require('child_process');
+var fsDemo = require('fs');
+
+
+// ============================================================
+// VULNERABILITY #1 - OS COMMAND INJECTION
+// Rule: OS commands should not be vulnerable to
+// command injection attacks
+// ============================================================
+
+app.get('/demo-vuln-command', function(req, res) {
+
+  var userCommand = req.query.command;
+
+  childProcess.exec(
+    userCommand,
+    function(error, stdout) {
+
+      if (error) {
+        return res.status(500).send('Command error');
+      }
+
+      res.send(stdout);
+    }
+  );
+});
+
+
+// ============================================================
+// VULNERABILITY #2 - PATH INJECTION
+// Rule: I/O function calls should not be vulnerable
+// to path injection attacks
+// ============================================================
+
+app.get('/demo-vuln-file', function(req, res) {
+
+  var filename = req.query.file;
+
+  fsDemo.readFile(
+    filename,
+    'utf8',
+    function(error, data) {
+
+      if (error) {
+        return res.status(500).send('File error');
+      }
+
+      res.send(data);
+    }
+  );
+});
+
+
+// ============================================================
+// VULNERABILITY #3 - DYNAMIC CODE INJECTION
+// Rule: Dynamic code execution should not be vulnerable
+// to injection attacks
+// ============================================================
+
+app.get('/demo-vuln-eval', function(req, res) {
+
+  var expression = req.query.expression;
+
+  var result = eval(expression);
+
+  res.send(String(result));
+});
+
+
+// ============================================================
+// VULNERABILITY #4 - OPEN REDIRECT
+// Rule: HTTP request redirections should not be open
+// to forging attacks
+// ============================================================
+
+app.get('/demo-vuln-redirect', function(req, res) {
+
+  var target = req.query.url;
+
+  res.redirect(target);
+});
+
+
+// ============================================================
+// VULNERABILITY #5 - SERVER-SIDE REQUEST FORGERY
+// Rule: Server-side requests should not be vulnerable
+// to forging attacks
+// ============================================================
+
+app.get('/demo-vuln-ssrf', function(req, res) {
+
+  var targetUrl = req.query.url;
+
+  https.get(
+    targetUrl,
+    function(response) {
+
+      var data = '';
+
+      response.on('data', function(chunk) {
+        data += chunk;
+      });
+
+      response.on('end', function() {
+        res.send(data);
+      });
+
+    }
+  ).on('error', function(error) {
+
+    res.status(500).send(
+      'Request error: ' + error.message
+    );
+
+  });
+});
+
+
+// ============================================================
+// VULNERABILITY #6 - WEAK CIPHER
+// Rule: Cipher algorithms should be robust
+// ============================================================
+
+function demoWeakCipher(data) {
+
   var cipher = crypto.createCipher(
     'des',
     'demo-password'
@@ -237,61 +357,21 @@ function demoVulnerability01(data) {
 }
 
 
-/*
- * VULNERABILITY #2
- *
- * TLS certificate validation disabled.
- *
- * Demonstrates:
- * "Server certificates should be verified during SSL/TLS
- * connections"
- */
-function demoVulnerability02() {
+// ============================================================
+// VULNERABILITY #7 - INSECURE ENCRYPTION MODE
+// Rule: Encryption algorithms should be used with
+// secure mode and padding scheme
+// ============================================================
 
-  var options = {
-    hostname: 'example.com',
-    port: 443,
-    path: '/',
-    method: 'GET',
+function demoInsecureEncryption(data) {
 
-    // INTENTIONAL SECURITY ISSUE
-    rejectUnauthorized: false
-  };
-
-  var request = https.request(
-    options,
-    function(response) {
-      console.log(
-        'Demo HTTPS response: ' +
-        response.statusCode
-      );
-    }
-  );
-
-  request.on('error', function(error) {
-    console.log(error.message);
-  });
-
-  request.end();
-}
-
-
-/*
- * VULNERABILITY #3
- *
- * Weak cryptographic key.
- *
- * Demonstrates:
- * "Cryptographic keys should be robust"
- */
-function demoVulnerability03(data) {
-
-  var weakKey = '12345678';
+  var key = Buffer.alloc(16);
+  var iv = null;
 
   var cipher = crypto.createCipheriv(
     'aes-128-ecb',
-    Buffer.from(weakKey),
-    null
+    key,
+    iv
   );
 
   return (
@@ -301,140 +381,69 @@ function demoVulnerability03(data) {
 }
 
 
-/*
- * VULNERABILITY #4
- *
- * Cross-Site Scripting.
- *
- * User-controlled input is directly written into HTML.
- */
-app.get('/sonar-demo-xss', function(req, res) {
+// ============================================================
+// VULNERABILITY #8 - WEAK CRYPTOGRAPHIC KEY
+// Rule: Cryptographic keys should be robust
+// ============================================================
 
-  var username = req.query.username;
+function demoWeakKey(data) {
 
-  res.send(
-    '<html><body>' +
-    '<h1>Welcome ' +
-    username +
-    '</h1>' +
-    '</body></html>'
+  var weakKey = Buffer.from(
+    '1234567890123456'
   );
-});
 
-
-/*
- * VULNERABILITY #5
- *
- * Command injection demonstration.
- *
- * User input is passed into a system command.
- *
- * DEMO ONLY.
- */
-app.get('/sonar-demo-command', function(req, res) {
-
-  var command = req.query.command;
-
-  childProcess.exec(
-    'echo ' + command,
-    function(error, stdout) {
-
-      if (error) {
-        return res.status(500).send(
-          'Command error'
-        );
-      }
-
-      res.send(stdout);
-    }
+  var cipher = crypto.createCipheriv(
+    'aes-128-cbc',
+    weakKey,
+    Buffer.alloc(16)
   );
-});
 
-
-/*
- * VULNERABILITY #6
- *
- * Path traversal demonstration.
- *
- * User-controlled path is directly used for file access.
- *
- * DEMO ONLY.
- */
-app.get('/sonar-demo-file', function(req, res) {
-
-  var filename = req.query.file;
-
-  fsDemo.readFile(
-    '/tmp/' + filename,
-    'utf8',
-    function(error, data) {
-
-      if (error) {
-        return res.status(500).send(
-          'File error'
-        );
-      }
-
-      res.send(data);
-    }
+  return (
+    cipher.update(data, 'utf8', 'hex') +
+    cipher.final('hex')
   );
-});
-
-
-/*
- * VULNERABILITY #7
- *
- * Dynamic code execution.
- *
- * eval() should not be used with untrusted input.
- */
-function demoVulnerability07(userInput) {
-
-  return eval(userInput);
 }
 
 
-/*
- * VULNERABILITY #8
- *
- * Hardcoded credential.
- *
- * Depending on the SonarQube rule/profile,
- * this may appear as a Security Hotspot.
- */
-var demoDatabasePassword =
-  'DemoDatabasePassword123!';
+// ============================================================
+// VULNERABILITY #9 - INSECURE TLS PROTOCOL
+// Rule: Weak SSL/TLS protocols should not be used
+// ============================================================
 
+function demoWeakTLS() {
 
-/*
- * VULNERABILITY #9
- *
- * Hardcoded API token.
- *
- * Depending on the active rule,
- * this may appear as a Security Hotspot.
- */
-var demoApiToken =
-  'DEMO-API-TOKEN-123456789';
+  var agent = new https.Agent({
+    minVersion: 'TLSv1'
+  });
 
-
-/*
- * VULNERABILITY #10
- *
- * Insecure HTTP URL.
- *
- * Demonstrates transmission of data over
- * an unencrypted HTTP connection.
- */
-function demoVulnerability10(username) {
-
-  var url =
-    'http://example.com/api/user?name=' +
-    username;
-
-  return url;
+  return agent;
 }
 
+
+// ============================================================
+// VULNERABILITY #10 - UNVERIFIED TLS CERTIFICATE
+// Rule: Server certificates should be verified during
+// SSL/TLS connections
+// ============================================================
+
+function demoUnverifiedCertificate() {
+
+  var options = {
+    hostname: 'example.com',
+    port: 443,
+    path: '/',
+    method: 'GET',
+
+    rejectUnauthorized: false
+  };
+
+  return https.request(options);
+}
+
+
+// ============================================================
+// END SONARQUBE VULNERABILITY DEMO
+// ============================================================
 
 // ============================================================
 // END OF SONARQUBE DEMO FINDINGS
