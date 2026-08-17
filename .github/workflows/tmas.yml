@@ -1,13 +1,19 @@
 name: Trend Micro Shift-Left Container Security
 
-# Runs on every PR (shift-left gate before merge) and on pushes to main
-# (final gate before pushing the image to the registry).
+# Runs on PRs to main and pushes to main
+# only when the workflow file changes.
 on:
   pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
+    branches:
+      - main
+    paths:
+      - ".github/workflows/accuknox-sonar-sast.yml"
 
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/accuknox-sonar-sast.yml"
 env:
   IMAGE_NAME: tmas-ecr-repo                          # your ECR repo name
   IMAGE_TAG: ${{ github.sha }}
