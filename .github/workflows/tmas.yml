@@ -13,7 +13,7 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/accuknox-sonar-sast.yml"
+      - ".github/workflows/tmas.yml"
 env:
   IMAGE_NAME: tmas-ecr-repo                          # your ECR repo name
   IMAGE_TAG: ${{ github.sha }}
