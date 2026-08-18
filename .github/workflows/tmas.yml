@@ -7,7 +7,7 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/accuknox-sonar-sast.yml"
+      - ".github/workflows/tmas.yml"
 
   push:
     branches:
