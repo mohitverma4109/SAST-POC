@@ -44,7 +44,7 @@ jobs:
 
     # Use a GitHub Environment ("production") to gate this job behind
     # required reviewers / protection rules and to scope secrets to it.
-    environment: production
+    environment: testing
 
     permissions:
       contents: read
