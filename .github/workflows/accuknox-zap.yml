@@ -32,7 +32,7 @@ on:
           - Informational
         default: High
 
-# Prevent overlapping scans against the same target from racing each other.
+
 concurrency:
   group: accuknox-dast-${{ github.ref }}
   cancel-in-progress: false
@@ -42,8 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
-    # Use a GitHub Environment ("production") to gate this job behind
-    # required reviewers / protection rules and to scope secrets to it.
+    
     environment: testing
 
     permissions:
@@ -81,9 +80,7 @@ jobs:
           curl -sSf --max-time 15 --retry 3 --retry-delay 5 -I "$TARGET_URL" \
             || { echo "::error::Target URL did not respond successfully."; exit 1; }
 
-      # This action runs the DAST scan itself (ZAP under the hood, managed by
-      # AccuKnox) and uploads findings straight to the AccuKnox Console —
-      # no separate docker run / curl upload step needed.
+      
       - name: Run AccuKnox DAST Scan
         id: accuknox_dast
         uses: accuknox/dast-scan-action@v1.0.0
