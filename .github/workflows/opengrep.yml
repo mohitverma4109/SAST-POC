@@ -67,6 +67,7 @@ jobs:
         project-classifier: container
 
   container-scan:
+    needs: Image-build
     runs-on: ubuntu-latest
     steps:
      - name: Checkout code
