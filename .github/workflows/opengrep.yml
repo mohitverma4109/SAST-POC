@@ -24,6 +24,7 @@ jobs:
           fi
           
   Opengrep-sast:
+     needs: build
      runs-on: ubuntu-latest
      steps:
       - name: Checkout code 
@@ -40,21 +41,26 @@ jobs:
           severity: "HIGH"
 
   Image-build:
-     runs-on: ubuntu-latest
-     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: docker build image
-        run: |
-         docker build -t test-image:${{ github.sha }} .
+   runs-on: ubuntu-latest
 
-      - name: SBOM
-        uses: accuknox/xbom-action@2.0
-        with:
-          bom-type:           sbom
-          token:              ${{ secrets.ACCUKNOX_TOKEN }}
-          endpoint:           ${{ secrets.ACCUKNOX_ENDPOINT }}
-          label:              ${{ secrets.ACCUKNOX_LABEL }}
-          project-name:       SBOM-POC
-          project-classifier: container
+   steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Docker Build
+      id: build
+      run: |
+        IMAGE="test-image:${{ github.sha }}"
+        docker build -t "$IMAGE" .
+        echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+    - name: Generate and Upload SBOM to AccuKnox
+      uses: accuknox/xbom-action@2.0
+      with:
+        bom-type: sbom
+        image: ${{ steps.build.outputs.image }}
+        token: ${{ secrets.ACCUKNOX_TOKEN }}
+        endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
+        label: ${{ secrets.ACCUKNOX_LABEL }}
+        project-name: my-project
+        project-classifier: container
