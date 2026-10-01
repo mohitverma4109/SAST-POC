@@ -65,3 +65,21 @@ jobs:
         label: ${{ secrets.ACCUKNOX_LABEL }}
         project-name: my-project
         project-classifier: container
+
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
+
+     - name: Run AccuKnox Container Scanner
+       uses: accuknox/container-scan-action@latest
+
+       with:
+          accuknox_token: ${{ secrets.ACCUKNOX_TOKEN }}
+          accuknox_label: ${{ secrets.ACCUKNOX_LABEL }}
+          accuknox_endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
+          image_name: "test-image"
+          tag: "latest"
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          soft_fail: true
