@@ -41,6 +41,7 @@ jobs:
           severity: "HIGH"
 
   Image-build:
+   needs: Opengrep-sast
    runs-on: ubuntu-latest
 
    steps:
