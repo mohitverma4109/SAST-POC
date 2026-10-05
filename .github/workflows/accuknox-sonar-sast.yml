@@ -1,19 +1,22 @@
 name: Build and AccuKnox SAST Scan
-on: 
+
+on:
   push:
     branches:
       - main
     paths:
       - ".github/workflows/accuknox-sonar-sast.yml"
+
   pull_request:
     branches:
       - main
-      
+
   workflow_dispatch:
-  
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -40,6 +43,212 @@ jobs:
       - name: Verify app entrypoint
         run: ls -lh app.js package.json
 
+      # ----------------------------------------
+      # Gitleaks Secret Scanning
+      # ----------------------------------------
+
+      - name: Run Gitleaks Secret Scan
+        id: gitleaks_scan
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------
+      # Generate Gitleaks CSV Report
+      # ----------------------------------------
+
+      - name: Generate Gitleaks CSV Report
+        if: always()
+        run: |
+          mkdir -p reports
+
+          # Run Gitleaks against the repository
+          gitleaks detect \
+            --source . \
+            --redact \
+            --report-format csv \
+            --report-path reports/gitleaks-report.csv \
+            --exit-code 0
+
+          echo "Gitleaks CSV report generated:"
+          ls -lh reports/gitleaks-report.csv
+
+      # ----------------------------------------
+      # Convert CSV Report to HTML
+      # ----------------------------------------
+
+      - name: Convert Gitleaks CSV to HTML
+        if: always()
+        run: |
+          python3 <<'PY'
+          import csv
+          import html
+          from pathlib import Path
+
+          csv_file = Path("reports/gitleaks-report.csv")
+          html_file = Path("reports/gitleaks-report.html")
+
+          headers = []
+          rows = []
+
+          if csv_file.exists() and csv_file.stat().st_size > 0:
+              with csv_file.open(
+                  "r",
+                  encoding="utf-8-sig",
+                  newline=""
+              ) as f:
+                  reader = csv.DictReader(f)
+                  headers = reader.fieldnames or []
+                  rows = list(reader)
+
+          with html_file.open("w", encoding="utf-8") as f:
+
+              f.write("""
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+          <title>Gitleaks Secret Scan Report</title>
+
+          <style>
+
+          body {
+              font-family: Arial, sans-serif;
+              margin: 30px;
+              background: #f8f9fa;
+          }
+
+          h1 {
+              margin-bottom: 10px;
+          }
+
+          .summary {
+              background: white;
+              padding: 15px;
+              margin-bottom: 20px;
+              border: 1px solid #ddd;
+          }
+
+          table {
+              border-collapse: collapse;
+              width: 100%;
+              background: white;
+          }
+
+          th,
+          td {
+              border: 1px solid #ddd;
+              padding: 8px;
+              text-align: left;
+              vertical-align: top;
+              word-break: break-word;
+          }
+
+          th {
+              background: #f2f2f2;
+          }
+
+          .no-findings {
+              padding: 15px;
+              background: white;
+              border: 1px solid #ddd;
+          }
+
+          </style>
+          </head>
+
+          <body>
+
+          <h1>Gitleaks Secret Scan Report</h1>
+          """)
+
+              f.write(
+                  f"""
+          <div class="summary">
+              <strong>Total Findings:</strong> {len(rows)}
+          </div>
+          """
+              )
+
+              if rows and headers:
+
+                  f.write("<table>")
+                  f.write("<thead>")
+                  f.write("<tr>")
+
+                  for header in headers:
+                      f.write(
+                          f"<th>{html.escape(header)}</th>"
+                      )
+
+                  f.write("</tr>")
+                  f.write("</thead>")
+                  f.write("<tbody>")
+
+                  for row in rows:
+
+                      f.write("<tr>")
+
+                      for header in headers:
+
+                          value = row.get(header, "")
+
+                          f.write(
+                              f"<td>{html.escape(str(value))}</td>"
+                          )
+
+                      f.write("</tr>")
+
+                  f.write("</tbody>")
+                  f.write("</table>")
+
+              else:
+
+                  f.write("""
+          <div class="no-findings">
+              No secrets detected.
+          </div>
+          """)
+
+              f.write("""
+          </body>
+          </html>
+          """)
+
+          print(f"HTML report generated: {html_file}")
+          PY
+
+      # ----------------------------------------
+      # Upload Gitleaks Reports
+      # ----------------------------------------
+
+      - name: Upload Gitleaks Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-security-report
+          path: reports/
+          retention-days: 7
+          if-no-files-found: warn
+
+      # ----------------------------------------
+      # Security Gate
+      # ----------------------------------------
+
+      - name: Enforce Gitleaks Security Gate
+        if: always()
+        run: |
+          if [ "${{ steps.gitleaks_scan.outcome }}" = "failure" ]; then
+            echo "::error::Gitleaks detected secrets or the scan failed."
+            echo "::error::Pipeline blocked due to Gitleaks security findings."
+            exit 1
+          fi
+
+          echo "Gitleaks scan passed successfully."
+
       - name: Validate required secrets
         run: |
           missing=""
@@ -49,6 +258,7 @@ jobs:
           [ -z "${{ secrets.ACCUKNOX_ENDPOINT }}" ] && missing="$missing ACCUKNOX_ENDPOINT"
           [ -z "${{ secrets.ACCUKNOX_TOKEN }}" ] && missing="$missing ACCUKNOX_TOKEN"
           [ -z "${{ secrets.ACCUKNOX_LABEL }}" ] && missing="$missing ACCUKNOX_LABEL"
+
           if [ -n "$missing" ]; then
             echo "::error::Missing required repo secrets:$missing"
             exit 1
@@ -67,20 +277,25 @@ jobs:
       - name: Wait for SonarQube analysis to finish
         run: |
           TASK_FILE=".scannerwork/report-task.txt"
+
           if [ ! -f "$TASK_FILE" ]; then
             echo "::error::report-task.txt not found — cannot verify analysis status."
             exit 1
           fi
+
           CE_TASK_URL=$(grep ceTaskUrl "$TASK_FILE" | cut -d'=' -f2-)
+
           for i in $(seq 1 30); do
             STATUS=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" "$CE_TASK_URL" | jq -r '.task.status')
             echo "Analysis status: $STATUS"
+
             if [ "$STATUS" == "SUCCESS" ]; then
               break
             elif [ "$STATUS" == "FAILED" ] || [ "$STATUS" == "CANCELED" ]; then
               echo "::error::SonarQube analysis task $STATUS"
               exit 1
             fi
+
             sleep 5
           done
 
@@ -115,10 +330,12 @@ jobs:
         run: |
           ISSUES_RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
             "${{ secrets.SONAR_HOST_URL }}/api/issues/search?componentKeys=${{ secrets.SONAR_PROJECT_KEY }}&impactSeverities=HIGH&resolved=false")
+
           ISSUES_TOTAL=$(echo "$ISSUES_RESPONSE" | jq -r '.total // 0')
 
           HOTSPOTS_RESPONSE=$(curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
             "${{ secrets.SONAR_HOST_URL }}/api/hotspots/search?projectKey=${{ secrets.SONAR_PROJECT_KEY }}&status=TO_REVIEW")
+
           HOTSPOTS_TOTAL=$(echo "$HOTSPOTS_RESPONSE" | jq '[.hotspots[] | select(.vulnerabilityProbability=="HIGH")] | length')
 
           echo "Critical/High issues: $ISSUES_TOTAL"
@@ -127,11 +344,13 @@ jobs:
           if [ "$ISSUES_TOTAL" -gt 0 ]; then
             echo "$ISSUES_RESPONSE" | jq -r '.issues[] | "- [\(.severity)] \(.component): \(.message)"'
           fi
+
           if [ "$HOTSPOTS_TOTAL" -gt 0 ]; then
             echo "$HOTSPOTS_RESPONSE" | jq -r '.hotspots[] | select(.vulnerabilityProbability=="HIGH") | "- [HOTSPOT-HIGH] \(.component): \(.message)"'
           fi
 
           TOTAL=$((ISSUES_TOTAL + HOTSPOTS_TOTAL))
+
           if [ "$TOTAL" -gt 0 ]; then
             echo "::error::Pipeline failed — $TOTAL Critical/High severity issue(s)/hotspot(s) found in SonarQube."
             exit 1
