@@ -1,0 +1,43 @@
+name: IaC Security Scan
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  terrascan:
+    name: Terrascan IaC Scan
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # --------------------------------
+      # Checkout Repository
+      # --------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --------------------------------
+      # Run Terrascan
+      # --------------------------------
+      - name: Run Terrascan
+        id: terrascan
+        uses: tenable/terrascan-action@main
+        with:
+          iac_type: 'terraform'
+          iac_version: 'v14'
+          policy_type: 'aws'
+          only_warn: true
+          sarif_upload: true
+          iac_dir: 'terraform'
+
+      # --------------------------------
+      # Upload SARIF to GitHub Code Scanning
+      # --------------------------------
+      - name: Upload SARIF file
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: terrascan.sarif
