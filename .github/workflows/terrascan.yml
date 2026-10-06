@@ -31,7 +31,7 @@ jobs:
           policy_type: 'aws'
           only_warn: true
           sarif_upload: true
-          iac_dir: 'terraform'
+          iac_dir: '.'
 
       # --------------------------------
       # Check SARIF File
