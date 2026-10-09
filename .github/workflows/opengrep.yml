@@ -1,0 +1,86 @@
+name: Accuknox SAST
+
+on:
+ workflow_dispatch: 
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+          
+  Opengrep-sast:
+     needs: build
+     runs-on: ubuntu-latest
+     steps:
+      - name: Checkout code 
+        uses: actions/checkout@v4
+       
+
+      - name: "Run Accuknox SAST: Opengrep"
+        uses: accuknox/sast-scan-opengrep-action@latest
+        with:
+          accuknox_endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
+          accuknox_token: ${{ secrets.ACCUKNOX_TOKEN }}
+          accuknox_label: ${{ secrets.ACCUKNOX_LABEL }}
+          soft_fail: "true"
+          severity: "HIGH"
+
+  Image-build:
+   needs: Opengrep-sast
+   runs-on: ubuntu-latest
+
+   steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Docker Build
+      id: build
+      run: |
+        IMAGE="test-image:${{ github.sha }}"
+        docker build -t "$IMAGE" .
+        echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+    - name: Generate and Upload SBOM to AccuKnox
+      uses: accuknox/xbom-action@2.0
+      with:
+        bom-type: sbom
+        image: ${{ steps.build.outputs.image }}
+        token: ${{ secrets.ACCUKNOX_TOKEN }}
+        endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
+        label: ${{ secrets.ACCUKNOX_LABEL }}
+        project-name: my-project
+        project-classifier: container
+
+  container-scan:
+    needs: Image-build
+    runs-on: ubuntu-latest
+    steps:
+     - name: Checkout code
+       uses: actions/checkout@v4
+
+     - name: Run AccuKnox Container Scanner
+       uses: accuknox/container-scan-action@latest
+
+       with:
+          accuknox_token: ${{ secrets.ACCUKNOX_TOKEN }}
+          accuknox_label: ${{ secrets.ACCUKNOX_LABEL }}
+          accuknox_endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
+          image_name: "test-image"
+          tag: "latest"
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          soft_fail: true

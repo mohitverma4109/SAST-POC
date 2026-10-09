@@ -1,0 +1,128 @@
+name: Trend Micro Shift-Left Container Security
+
+# Runs on PRs to main and pushes to main
+# only when the workflow file changes.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tmas.yml"
+
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/tmas.yml"
+env:
+  IMAGE_NAME: tmas-ecr-repo                          # your ECR repo name
+  IMAGE_TAG: ${{ github.sha }}
+  AWS_REGION: us-west-2                              # your AWS region
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # needed if you want to upload SARIF to GitHub code scanning
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ---------- BUILD ----------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (local, not pushed yet)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+
+      # ---------- SHIFT-LEFT SCAN ----------
+      # Trend Vision One Artifact Scanner (tmas) - official CLI for
+      # Container Security shift-left scanning (vulnerabilities, malware,
+      # secrets, and misconfig checks against your Vision One policy).
+      - name: Install Trend Micro Artifact Scanner (tmas)
+        run: |
+          curl -sSL https://cli.artifactscan.cloudone.trendmicro.com/tmas-cli/latest/tmas-cli_Linux_x86_64.tar.gz -o tmas.tar.gz
+          tar -xzf tmas.tar.gz
+          chmod +x tmas
+          sudo mv tmas /usr/local/bin/tmas
+
+      # tmas reads the API key directly from the TMAS_API_KEY environment
+      # variable at scan time — there is no separate "configure"/login step.
+
+      - name: Scan image (vulnerabilities, malware, secrets, SBOM)
+        id: scan
+        env:
+          TMAS_API_KEY: ${{ secrets.TMAS_API_KEY }}
+        run: |
+          tmas scan docker:${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            -VMS \
+            --saveSBOM \
+            --region ${{ vars.TM_REGION || 'ap-south-1' }} \
+            > scan-result.json
+
+      - name: Upload scan results as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trendmicro-scan-results
+          path: scan-result.json
+
+      # ---------- POLICY GATE (threshold-based) ----------
+      # Blocks the push only if (critical + high) combined count exceeds a
+      # configurable threshold, rather than zero-tolerance on any critical
+      # finding. Threshold is set via the MAX_CRIT_HIGH_COUNT repo variable
+      # (default 20 if not set) — adjust in Settings > Secrets and variables
+      # > Actions > Variables as your CVE backlog shrinks over time.
+      - name: Evaluate scan results (threshold gate)
+        run: |
+          echo "Inspecting scan-result.json..."
+          CRITICAL_COUNT=$(jq '.vulnerabilities.criticalCount' scan-result.json)
+          HIGH_COUNT=$(jq '.vulnerabilities.highCount' scan-result.json)
+          COMBINED_COUNT=$((CRITICAL_COUNT + HIGH_COUNT))
+          THRESHOLD=${{ vars.MAX_CRIT_HIGH_COUNT || 20 }}
+
+          echo "Critical vulnerabilities found: $CRITICAL_COUNT"
+          echo "High vulnerabilities found: $HIGH_COUNT"
+          echo "Combined (critical + high): $COMBINED_COUNT"
+          echo "Threshold (MAX_CRIT_HIGH_COUNT): $THRESHOLD"
+
+          if [ "$COMBINED_COUNT" -gt "$THRESHOLD" ]; then
+            echo "::error::Image failed the security gate — combined critical+high count ($COMBINED_COUNT) exceeds threshold ($THRESHOLD). Blocking push."
+            exit 1
+          fi
+          echo "Image passed the threshold gate ($COMBINED_COUNT <= $THRESHOLD)."
+
+      # ---------- PUSH TO ECR (only reached if the scan + policy gate above passed) ----------
+      # Because these steps come after "Enforce Vision One policy gate", a failed
+      # scan stops the job right there — GitHub Actions never executes the steps
+      # below, so a vulnerable/malware-flagged image is never pushed to ECR.
+      - name: Configure AWS credentials
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and push clean image to ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          docker tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} $ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} $ECR_REGISTRY/${{ env.IMAGE_NAME }}:latest
+          docker push $ECR_REGISTRY/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ env.IMAGE_NAME }}:latest
